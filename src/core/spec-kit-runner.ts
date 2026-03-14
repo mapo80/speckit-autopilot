@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { join, dirname } from "path";
 import { spawnSync } from "child_process";
 import type { Phase } from "./state-store.js";
+import { copyBundledTemplate } from "../cli/bootstrap-product.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -50,6 +51,11 @@ export function ensureSpecKitInitialized(root: string): { ok: boolean; error?: s
   );
 
   if (result.status !== 0) {
+    // specify init failed — try bundled template as offline fallback
+    copyBundledTemplate(root);
+    if (existsSync(join(root, ".specify")) || existsSync(join(root, ".claude", "commands"))) {
+      return { ok: true };
+    }
     return {
       ok: false,
       error: `specify init failed (exit ${result.status}): ${(result.stderr ?? result.stdout ?? "unknown").slice(0, 300)}`,

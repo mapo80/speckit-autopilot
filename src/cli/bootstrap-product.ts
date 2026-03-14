@@ -1,5 +1,6 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
-import { join } from "path";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, cpSync } from "fs";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
 import yaml from "js-yaml";
 import { makeEmptyBacklog, Backlog, Feature, featureNextId } from "../core/backlog-schema.js";
 import { StateStore } from "../core/state-store.js";
@@ -31,6 +32,11 @@ export function initSpecKit(root: string): { ok: boolean; error?: string } {
     { cwd: root, encoding: "utf8", shell: true, timeout: 60_000 }
   );
   if (result.status !== 0) {
+    // specify init failed — try bundled template as offline fallback
+    copyBundledTemplate(root);
+    if (existsSync(join(root, ".specify")) || existsSync(join(root, ".claude"))) {
+      return { ok: true };
+    }
     return {
       ok: false,
       error: `specify init failed (exit ${result.status}): ${(result.stderr ?? result.stdout ?? "unknown error").slice(0, 300)}`,
@@ -39,6 +45,11 @@ export function initSpecKit(root: string): { ok: boolean; error?: string } {
   // `specify init` may exit 0 even when the download fails (e.g., network errors).
   // Verify success by checking that key directories were actually created.
   if (!existsSync(join(root, ".specify")) && !existsSync(join(root, ".claude"))) {
+    // Try bundled template before giving up
+    copyBundledTemplate(root);
+    if (existsSync(join(root, ".specify")) || existsSync(join(root, ".claude"))) {
+      return { ok: true };
+    }
     const output = (result.stdout ?? result.stderr ?? "").slice(0, 300);
     return {
       ok: false,
@@ -49,10 +60,30 @@ export function initSpecKit(root: string): { ok: boolean; error?: string } {
 }
 
 // ---------------------------------------------------------------------------
+// Bundled template copy (offline / rate-limit fallback)
+// ---------------------------------------------------------------------------
+
+export function copyBundledTemplate(root: string): void {
+  const pluginRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+  const templateSrc = join(pluginRoot, "templates", "spec-kit-claude");
+  if (!existsSync(templateSrc)) return; // template not bundled — skip silently
+  for (const sub of [".claude", ".specify"]) {
+    const src = join(templateSrc, sub);
+    const dest = join(root, sub);
+    if (existsSync(src) && !existsSync(dest)) {
+      cpSync(src, dest, { recursive: true });
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Manual .speckit/ scaffold (fallback when specify CLI unavailable)
 // ---------------------------------------------------------------------------
 
 export function scaffoldSpeckitDirs(root: string): void {
+  // First try to copy the full bundled template (includes real Spec Kit commands)
+  copyBundledTemplate(root);
+  // Ensure minimal dirs exist even if the bundle is absent
   for (const dir of [
     join(root, ".speckit"),
     join(root, "docs", "specs"),
