@@ -7,6 +7,7 @@ import { StateStore, Phase } from "../core/state-store.js";
 import { pickNextFeature } from "../core/feature-picker.js";
 import { appendToIterationLog } from "../core/compact-state.js";
 import { runAcceptanceGate, applyGateResultToState } from "../core/acceptance-gate.js";
+import { SpecKitRunner, ensureSpecKitInitialized, verifyImplementationProducedCode } from "../core/spec-kit-runner.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -62,23 +63,69 @@ export interface PhaseRunnerOptions {
 
 export type PhaseRunner = (opts: PhaseRunnerOptions) => Promise<{ success: boolean; phase: Phase; error?: string }>;
 
-export function makeDefaultPhaseRunner(): PhaseRunner {
-  // In production this would invoke Spec Kit skills via Claude Code API.
-  // For the plugin structure we return a no-op runner that reports success.
-  // The actual orchestration happens through Claude Code's skill invocation system.
+export function makeDefaultPhaseRunner(apiKey?: string): PhaseRunner {
   return async (opts) => {
-    const phases: Phase[] = ["constitution", "spec", "clarify", "plan", "tasks", "analyze", "implement"];
-    const startIdx = opts.startFromPhase ? phases.indexOf(opts.startFromPhase) : 0;
-    const activePhases = startIdx >= 0 ? phases.slice(startIdx) : phases;
+    const { root, featureId, featureTitle, startFromPhase, dryRun } = opts;
 
-    let lastPhase: Phase = activePhases[0] ?? "spec";
-    for (const phase of activePhases) {
-      lastPhase = phase;
-      if (opts.dryRun) continue;
-      // Real execution: the skill system in Claude Code handles the actual Spec Kit invocation
-      // This runner just tracks phase progress via state updates
+    // Dry-run: skip real AI calls but still validate init
+    if (dryRun) {
+      const phases: Phase[] = ["constitution", "spec", "clarify", "plan", "tasks", "analyze", "implement"];
+      const startIdx = startFromPhase ? phases.indexOf(startFromPhase) : 0;
+      const activePhases = startIdx >= 0 ? phases.slice(startIdx) : phases;
+      const lastPhase: Phase = activePhases[activePhases.length - 1] ?? "implement";
+      return { success: true, phase: lastPhase };
     }
-    return { success: true, phase: lastPhase };
+
+    // Ensure spec-kit is initialized in the project root
+    const initResult = ensureSpecKitInitialized(root);
+    if (!initResult.ok) {
+      return {
+        success: false,
+        phase: "constitution" as Phase,
+        error: `Spec Kit initialization failed: ${initResult.error}`,
+      };
+    }
+
+    // Build runner — fails immediately if ANTHROPIC_API_KEY is missing
+    let runner: SpecKitRunner;
+    try {
+      runner = new SpecKitRunner(root, apiKey);
+    } catch (err) {
+      return {
+        success: false,
+        phase: "spec" as Phase,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+
+    // Read acceptance criteria from the backlog if available
+    let acceptanceCriteria: string[] = [];
+    try {
+      const backlog = readBacklog(root);
+      const feature = backlog.features.find((f) => f.id === featureId);
+      acceptanceCriteria = feature?.acceptanceCriteria ?? [];
+    } catch {
+      // backlog unavailable — proceed without criteria
+    }
+
+    // Run spec → plan → tasks → implement phases
+    const result = await runner.runPhases(featureId, featureTitle, acceptanceCriteria, startFromPhase ?? "spec");
+
+    if (!result.success) {
+      return { success: false, phase: result.phase, error: result.error };
+    }
+
+    // Verify implementation produced real code
+    const verification = verifyImplementationProducedCode(root, featureId);
+    if (!verification.hasNewFiles) {
+      return {
+        success: false,
+        phase: "implement" as Phase,
+        error: `No application code produced. ${verification.diffSummary}`,
+      };
+    }
+
+    return { success: true, phase: result.phase };
   };
 }
 

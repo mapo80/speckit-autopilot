@@ -12,9 +12,15 @@
     "typecheck": "tsc --noEmit",
     "prepare": "npm run build"
   },
-  "keywords": ["claude-code", "plugin", "spec-kit", "autopilot"],
+  "keywords": [
+    "claude-code",
+    "plugin",
+    "spec-kit",
+    "autopilot"
+  ],
   "license": "MIT",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.78.0",
     "js-yaml": "^4.1.0",
     "zod": "^3.23.8"
   },
@@ -32,7 +38,9 @@
   "jest": {
     "preset": "ts-jest/presets/default-esm",
     "testEnvironment": "node",
-    "extensionsToTreatAsEsm": [".ts"],
+    "extensionsToTreatAsEsm": [
+      ".ts"
+    ],
     "moduleNameMapper": {
       "^(\\.{1,2}/.*)\\.js$": "$1"
     },
@@ -43,7 +51,9 @@
           "useESM": true,
           "isolatedModules": true,
           "diagnostics": {
-            "ignoreCodes": [151002]
+            "ignoreCodes": [
+              151002
+            ]
           }
         }
       ]

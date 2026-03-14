@@ -1,7 +1,7 @@
-import { readFileSync, writeFileSync, existsSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import yaml from "js-yaml";
-import { parseBacklog, makeEmptyBacklog, Backlog, Feature, featureNextId } from "../core/backlog-schema.js";
+import { makeEmptyBacklog, Backlog, Feature, featureNextId } from "../core/backlog-schema.js";
 import { StateStore } from "../core/state-store.js";
 import { generateRoadmap, renderRoadmapMarkdown } from "../core/roadmap-generator.js";
 import { spawnSync } from "child_process";
@@ -11,10 +11,54 @@ import { spawnSync } from "child_process";
 // ---------------------------------------------------------------------------
 
 export function detectSpecKit(root: string): { available: boolean; initialized: boolean } {
-  const versionResult = spawnSync("specify", ["--version"], { encoding: "utf8", shell: true });
+  // `specify` uses `specify version` subcommand (not --version flag)
+  const versionResult = spawnSync("specify", ["version"], { encoding: "utf8", shell: true });
   const available = versionResult.status === 0;
-  const initialized = existsSync(join(root, ".speckit"));
+  // spec-kit creates `.specify/` directory (not `.speckit/`)
+  const initialized =
+    existsSync(join(root, ".specify")) || existsSync(join(root, ".speckit"));
   return { available, initialized };
+}
+
+// ---------------------------------------------------------------------------
+// Spec Kit initialization
+// ---------------------------------------------------------------------------
+
+export function initSpecKit(root: string): { ok: boolean; error?: string } {
+  const result = spawnSync(
+    "specify",
+    ["init", "--here", "--force", "--ai", "claude", "--ignore-agent-tools", "--no-git"],
+    { cwd: root, encoding: "utf8", shell: true, timeout: 60_000 }
+  );
+  if (result.status !== 0) {
+    return {
+      ok: false,
+      error: `specify init failed (exit ${result.status}): ${(result.stderr ?? result.stdout ?? "unknown error").slice(0, 300)}`,
+    };
+  }
+  // `specify init` may exit 0 even when the download fails (e.g., network errors).
+  // Verify success by checking that key directories were actually created.
+  if (!existsSync(join(root, ".specify")) && !existsSync(join(root, ".claude"))) {
+    const output = (result.stdout ?? result.stderr ?? "").slice(0, 300);
+    return {
+      ok: false,
+      error: `specify init exited 0 but .specify/ and .claude/ were not created. Output: ${output}`,
+    };
+  }
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// Manual .speckit/ scaffold (fallback when specify CLI unavailable)
+// ---------------------------------------------------------------------------
+
+export function scaffoldSpeckitDirs(root: string): void {
+  for (const dir of [
+    join(root, ".speckit"),
+    join(root, "docs", "specs"),
+  ]) {
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -233,10 +277,33 @@ export async function bootstrapProduct(root: string): Promise<BootstrapResult> {
   const store = new StateStore(root);
   store.createInitial("greenfield");
 
-  // Detect Spec Kit
-  const { available: specKitAvailable, initialized: specKitInitialized } = detectSpecKit(root);
+  // Detect Spec Kit availability
+  const { available: specKitAvailable } = detectSpecKit(root);
+
+  // If specify CLI is available, initialize Spec Kit in the project root.
+  // If initialization fails, fall back to manual .speckit/ scaffold.
+  let specKitInitialized = false;
+  if (specKitAvailable) {
+    const initResult = initSpecKit(root);
+    if (initResult.ok) {
+      specKitInitialized = true;
+    } else {
+      // Fallback: create minimal directories so the runner can still operate
+      scaffoldSpeckitDirs(root);
+    }
+  } else {
+    // No CLI: scaffold minimal directories so SDK path can write specs
+    scaffoldSpeckitDirs(root);
+  }
 
   const statePath = join(root, "docs", "autopilot-state.json");
+
+  const notes: string[] = [];
+  if (!specKitAvailable) {
+    notes.push("NOTE: specify CLI not found – using SDK-only mode.");
+  } else if (!specKitInitialized) {
+    notes.push("NOTE: specify init failed – using minimal scaffold.");
+  }
 
   return {
     success: true,
@@ -247,8 +314,6 @@ export async function bootstrapProduct(root: string): Promise<BootstrapResult> {
     statePath,
     specKitAvailable,
     specKitInitialized,
-    message: `Bootstrap complete. ${backlog.features.length} feature(s) extracted.${
-      !specKitAvailable ? " NOTE: Spec Kit not found – run `specify init . --ai claude --ai-skills` before shipping." : ""
-    }`,
+    message: `Bootstrap complete. ${backlog.features.length} feature(s) extracted.${notes.length ? " " + notes.join(" ") : ""}`,
   };
 }

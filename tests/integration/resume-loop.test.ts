@@ -135,6 +135,44 @@ describe("resumeLoop – continueAutomatically", () => {
 });
 
 // ---------------------------------------------------------------------------
+// resume-loop: validateStateForResume branch – bootstrapped with activeFeature
+// ---------------------------------------------------------------------------
+
+describe("resumeLoop – bootstrapped with activeFeature", () => {
+  let tmp: string;
+  beforeEach(() => { tmp = makeTmp(); });
+  afterEach(() => rmSync(tmp, { recursive: true, force: true }));
+
+  it("is resumable when status=bootstrapped but activeFeature is set", async () => {
+    const store = new StateStore(tmp);
+    store.createInitial();
+    // Force status=bootstrapped but also set activeFeature (covers the && !state.activeFeature false branch)
+    store.update({ status: "bootstrapped", activeFeature: "F-001", currentPhase: "spec" });
+    writeBacklog(tmp, [makeFeature("F-001", "in_progress")]);
+
+    const result = await resumeLoop({ root: tmp, continueAutomatically: false });
+    expect(result.resumed).toBe(true);
+    expect(result.resolvedPhase).toBe("spec");
+  });
+
+  it("uses default continueAutomatically=true when not specified", async () => {
+    const store = new StateStore(tmp);
+    store.createInitial();
+    store.update({ status: "running" });
+    writeBacklog(tmp, [makeFeature("F-001", "done")]);
+
+    // Don't pass continueAutomatically — uses default true
+    const result = await resumeLoop({
+      root: tmp,
+      phaseRunner: makeNoOpPhaseRunner(),
+      dryRun: true,
+    });
+
+    expect(result.continuedAutomatically).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // resume-loop: compaction reinjection
 // ---------------------------------------------------------------------------
 

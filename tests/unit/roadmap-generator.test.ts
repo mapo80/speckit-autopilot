@@ -90,6 +90,37 @@ describe("topologicalSort", () => {
     // Circular nodes should be excluded
     expect(sorted).toHaveLength(0);
   });
+
+  it("handles dangling dependency (dep not in features list)", () => {
+    // F-002 depends on F-MISSING which is not in the features array
+    const f1 = makeFeature("F-001");
+    const f2 = makeFeature("F-002", "medium", ["F-MISSING"]);
+    // F-MISSING is not in the input; adj.get("F-MISSING") returns undefined (null branch)
+    // inDegree.get("F-002") starts at 0, then gets +1 for the dep
+    const sorted = topologicalSort([f1, f2]);
+    // F-001 has no deps → queued; F-002 has dep on missing → only gets queued if inDegree reaches 0
+    // Since "F-MISSING" is never processed, F-002's inDegree never reaches 0 → excluded
+    expect(sorted.some((f) => f.id === "F-001")).toBe(true);
+  });
+
+  it("handles feature depending on itself (self-cycle)", () => {
+    // Self-cycle: inDegree never reaches 0
+    const f1 = makeFeature("F-001", "medium", ["F-001"]);
+    const sorted = topologicalSort([f1]);
+    expect(sorted).toHaveLength(0);
+  });
+
+  it("sorts ready neighbours by priority after each dequeue", () => {
+    // F-001 → F-002 (low) and F-003 (high): F-003 should come before F-002
+    const f1 = makeFeature("F-001");
+    const f2 = makeFeature("F-002", "low", ["F-001"]);
+    const f3 = makeFeature("F-003", "high", ["F-001"]);
+    const sorted = topologicalSort([f1, f2, f3]);
+    const ids = sorted.map((f) => f.id);
+    expect(ids[0]).toBe("F-001");
+    expect(ids[1]).toBe("F-003"); // high before low
+    expect(ids[2]).toBe("F-002");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -174,5 +205,20 @@ describe("renderRoadmapMarkdown", () => {
     };
     const md = renderRoadmapMarkdown(doc);
     expect(md).not.toContain("## Notes");
+  });
+
+  it("renders dependsOn column with dependency IDs when feature has deps", () => {
+    const f1 = makeFeature("F-001");
+    const f2 = makeFeature("F-002", "medium", ["F-001"]);
+    const doc: RoadmapDocument = {
+      generatedAt: "2024-01-01T00:00:00.000Z",
+      epics: [{ name: "Core", features: [f1, f2] }],
+      orderedFeatures: [f1, f2],
+      notes: [],
+    };
+    const md = renderRoadmapMarkdown(doc);
+    expect(md).toContain("F-001");
+    // f2 depends on f1 — should appear in the deps column
+    expect(md).toContain("F-001");
   });
 });

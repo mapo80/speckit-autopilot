@@ -1,0 +1,181 @@
+/**
+ * Mocked tests for bootstrap-product.ts and spec-kit-runner.ts branches that
+ * require controlling the output of spawnSync (specify CLI calls).
+ *
+ * Uses jest.unstable_mockModule for ESM-compatible module mocking.
+ */
+import { describe, it, expect, beforeEach, afterEach, jest } from "@jest/globals";
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, existsSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function makeTmp(): string {
+  return mkdtempSync(join(tmpdir(), "bootstrap-mock-"));
+}
+
+const SAMPLE_PRODUCT_MD = `# Mock Product
+
+## In Scope
+### Feature 1 - Core
+- Does core stuff
+
+## Delivery Preference
+1. Core
+`;
+
+// ---------------------------------------------------------------------------
+// Mock child_process so we can control spawnSync return values
+// ---------------------------------------------------------------------------
+
+// We mock child_process BEFORE importing the module under test.
+// With jest.unstable_mockModule, the mock is hoisted before dynamic import.
+const mockSpawnSync = jest.fn();
+
+await jest.unstable_mockModule("child_process", () => ({
+  spawnSync: mockSpawnSync,
+}));
+
+// Dynamically import AFTER setting up mock
+const { initSpecKit, bootstrapProduct, detectSpecKit } = await import(
+  "../../src/cli/bootstrap-product.js"
+);
+
+// ---------------------------------------------------------------------------
+// initSpecKit – line 41-48 (exit 0 but no dirs created)
+// ---------------------------------------------------------------------------
+
+describe("initSpecKit – mocked spawnSync", () => {
+  let tmp: string;
+  beforeEach(() => {
+    tmp = makeTmp();
+    mockSpawnSync.mockReset();
+  });
+  afterEach(() => {
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it("returns ok:false when specify exits 0 but .specify and .claude dirs missing (lines 41-48)", () => {
+    // Simulate specify init exiting 0 but no directories were created
+    mockSpawnSync.mockReturnValue({ status: 0, stdout: "init output", stderr: "" });
+
+    const result = initSpecKit(tmp);
+    // Dirs don't exist → should fall through to the directory check → ok:false
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain(".specify/");
+  });
+
+  it("returns ok:true when specify exits 0 and .specify dir exists (line 48)", () => {
+    mockSpawnSync.mockReturnValue({ status: 0, stdout: "", stderr: "" });
+    mkdirSync(join(tmp, ".specify"), { recursive: true });
+
+    const result = initSpecKit(tmp);
+    expect(result.ok).toBe(true);
+  });
+
+  it("returns ok:true when specify exits 0 and .claude dir exists (line 48)", () => {
+    mockSpawnSync.mockReturnValue({ status: 0, stdout: "", stderr: "" });
+    mkdirSync(join(tmp, ".claude"), { recursive: true });
+
+    const result = initSpecKit(tmp);
+    expect(result.ok).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// detectSpecKit – mocked
+// ---------------------------------------------------------------------------
+
+describe("detectSpecKit – mocked spawnSync", () => {
+  let tmp: string;
+  beforeEach(() => {
+    tmp = makeTmp();
+    mockSpawnSync.mockReset();
+  });
+  afterEach(() => {
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it("returns available:false when specify version exits non-zero", () => {
+    mockSpawnSync.mockReturnValue({ status: 1, stdout: "", stderr: "not found" });
+    const result = detectSpecKit(tmp);
+    expect(result.available).toBe(false);
+    expect(result.initialized).toBe(false);
+  });
+
+  it("returns available:true when specify version exits 0", () => {
+    mockSpawnSync.mockReturnValue({ status: 0, stdout: "1.0.0", stderr: "" });
+    const result = detectSpecKit(tmp);
+    expect(result.available).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// bootstrapProduct – lines 289, 296, 303
+// specKitAvailable=true + initResult.ok=true → specKitInitialized=true (line 289)
+// specKitAvailable=false → scaffoldSpeckitDirs (line 296) + note (line 303)
+// ---------------------------------------------------------------------------
+
+describe("bootstrapProduct – mocked specKit availability", () => {
+  let tmp: string;
+  beforeEach(() => {
+    tmp = makeTmp();
+    mockSpawnSync.mockReset();
+    mkdirSync(join(tmp, "docs"), { recursive: true });
+    writeFileSync(join(tmp, "docs", "product.md"), SAMPLE_PRODUCT_MD, "utf8");
+  });
+  afterEach(() => {
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it("sets specKitInitialized:true when specify available and init succeeds (line 289)", async () => {
+    // First call: specify version → exit 0 (available)
+    // Second call: specify init → exit 0, and we pre-create dirs
+    mkdirSync(join(tmp, ".specify"), { recursive: true });
+    mockSpawnSync
+      .mockReturnValueOnce({ status: 0, stdout: "1.0.0", stderr: "" }) // specify version
+      .mockReturnValueOnce({ status: 0, stdout: "", stderr: "" }); // specify init
+
+    const result = await bootstrapProduct(tmp);
+    expect(result.success).toBe(true);
+    expect(result.specKitAvailable).toBe(true);
+    expect(result.specKitInitialized).toBe(true);
+    expect(result.message).not.toContain("NOTE:");
+  });
+
+  it("calls scaffoldSpeckitDirs and adds note when specify not available (lines 296, 303)", async () => {
+    // specify version → exit 1 (not available)
+    mockSpawnSync.mockReturnValue({ status: 1, stdout: "", stderr: "command not found" });
+
+    const result = await bootstrapProduct(tmp);
+    expect(result.success).toBe(true);
+    expect(result.specKitAvailable).toBe(false);
+    expect(result.specKitInitialized).toBe(false);
+    // scaffoldSpeckitDirs creates .speckit/ and docs/specs/
+    expect(existsSync(join(tmp, ".speckit"))).toBe(true);
+    // Note should be added
+    expect(result.message).toContain("NOTE:");
+    expect(result.message).toContain("SDK-only");
+  });
+
+  it("calls scaffoldSpeckitDirs and adds note when specify available but init fails (lines 292, 305)", async () => {
+    // specify version → exit 0 (available)
+    // specify init → exit 1 (fails)
+    mockSpawnSync
+      .mockReturnValueOnce({ status: 0, stdout: "1.0.0", stderr: "" }) // specify version
+      .mockReturnValueOnce({ status: 1, stdout: "", stderr: "init failed" }); // specify init
+
+    const result = await bootstrapProduct(tmp);
+    expect(result.success).toBe(true);
+    expect(result.specKitAvailable).toBe(true);
+    expect(result.specKitInitialized).toBe(false);
+    // scaffoldSpeckitDirs should have run as fallback
+    expect(existsSync(join(tmp, ".speckit"))).toBe(true);
+    // Note about init failure
+    expect(result.message).toContain("NOTE:");
+    expect(result.message).toContain("minimal scaffold");
+  });
+});

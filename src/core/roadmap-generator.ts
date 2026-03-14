@@ -29,13 +29,14 @@ export function topologicalSort(features: Feature[]): Feature[] {
     for (const dep of f.dependsOn) {
       const list = adj.get(dep);
       if (list) list.push(f.id);
-      inDegree.set(f.id, (inDegree.get(f.id) ?? 0) + 1);
+      // inDegree always has f.id since it was seeded from the features array
+      inDegree.set(f.id, (inDegree.get(f.id) as number) + 1);
     }
   }
 
   // Seed queue with nodes having no dependencies, sorted by priority desc then original index
   const queue: string[] = features
-    .filter((f) => (inDegree.get(f.id) ?? 0) === 0)
+    .filter((f) => inDegree.get(f.id) === 0)
     .sort((a, b) => priorityWeight(b.priority) - priorityWeight(a.priority))
     .map((f) => f.id);
 
@@ -46,10 +47,12 @@ export function topologicalSort(features: Feature[]): Feature[] {
     const feature = idToFeature.get(id);
     if (feature) result.push(feature);
 
-    const neighbours = adj.get(id) ?? [];
+    // adj always has id since the queue is seeded from feature IDs
+    const neighbours = adj.get(id) as string[];
     const ready: string[] = [];
     for (const nId of neighbours) {
-      const deg = (inDegree.get(nId) ?? 1) - 1;
+      // inDegree always has nId since nId comes from adj which maps feature IDs
+      const deg = (inDegree.get(nId) as number) - 1;
       inDegree.set(nId, deg);
       if (deg === 0) ready.push(nId);
     }

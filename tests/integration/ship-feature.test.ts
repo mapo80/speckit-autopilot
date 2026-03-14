@@ -128,7 +128,9 @@ describe("shipFeature – greenfield", () => {
 
   it("marks feature done in backlog on success (non-dry-run)", async () => {
     setupGreenfield(tmp, [makeFeature("F-001")]);
-    await shipFeature({ root: tmp, dryRun: false });
+    // Inject a success runner so the test doesn't require ANTHROPIC_API_KEY
+    const successRunner = async () => ({ success: true, phase: "implement" as const });
+    await shipFeature({ root: tmp, dryRun: false, phaseRunner: successRunner });
     const backlog = readBacklog(tmp);
     expect(backlog.features[0].status).toBe("done");
   });
@@ -141,7 +143,9 @@ describe("shipFeature – greenfield", () => {
 
   it("writes iteration log on success (non-dry-run)", async () => {
     setupGreenfield(tmp, [makeFeature("F-001")]);
-    await shipFeature({ root: tmp, dryRun: false });
+    // Inject a success runner so the test doesn't require ANTHROPIC_API_KEY
+    const successRunner = async () => ({ success: true, phase: "implement" as const });
+    await shipFeature({ root: tmp, dryRun: false, phaseRunner: successRunner });
     expect(existsSync(join(tmp, "docs", "iteration-log.md"))).toBe(true);
   });
 });
@@ -205,6 +209,26 @@ describe("shipFeature – standalone brownfield (no backlog)", () => {
     const result = await shipFeature({ root: tmp, featureTarget: "New API Feature", dryRun: true });
     expect(result.featureId).toBe("standalone");
     expect(result.featureTitle).toBe("New API Feature");
+  });
+
+  it("standalone non-dryRun writes state and log (covers lines 260-261)", async () => {
+    // Brownfield without backlog, non-dryRun, inject success runner
+    mkdirSync(join(tmp, "src"), { recursive: true });
+    writeFileSync(join(tmp, "src", "index.ts"), "export {};", "utf8");
+    const pkg = { name: "app", version: "1.0.0", dependencies: { x: "1" }, devDependencies: {} };
+    writeFileSync(join(tmp, "package.json"), JSON.stringify(pkg), "utf8");
+
+    const successRunner = async () => ({ success: true, phase: "implement" as const });
+    const result = await shipFeature({
+      root: tmp,
+      featureTarget: "Standalone Feature",
+      dryRun: false,
+      phaseRunner: successRunner,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.featureId).toBe("standalone");
+    expect(existsSync(join(tmp, "docs", "iteration-log.md"))).toBe(true);
   });
 });
 
@@ -272,5 +296,21 @@ describe("formatStatus", () => {
     store.createInitial();
     const output = formatStatus(tmp);
     expect(output).toContain("unknown");
+  });
+
+  it("shows pass when lastTestsPassed is true", () => {
+    const store = new StateStore(tmp);
+    store.createInitial();
+    store.update({ lastTestsPassed: true, lastLintPassed: true });
+    const output = formatStatus(tmp);
+    expect(output).toContain("pass");
+  });
+
+  it("shows fail when lastTestsPassed is false", () => {
+    const store = new StateStore(tmp);
+    store.createInitial();
+    store.update({ lastTestsPassed: false, lastLintPassed: false });
+    const output = formatStatus(tmp);
+    expect(output).toContain("fail");
   });
 });
