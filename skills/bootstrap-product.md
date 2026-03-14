@@ -94,8 +94,23 @@ features:
 
 ## Spec Kit detection
 
-Before writing any file, check whether Spec Kit is available:
-- Run `specify --version` or check for `.speckit/` directory
-- If Spec Kit is NOT installed/initialised: print a notice and suggest running
-  `specify init . --ai claude --ai-skills` before using `ship-product` or `ship-feature`
-- Bootstrap proceeds regardless; Spec Kit is only needed at implementation time
+Before writing any file, check whether Spec Kit is available and initialised.
+
+**Step 1 – check if `.claude/commands/speckit.specify.md` exists** in the current directory.
+If yes, Spec Kit is already initialised — skip to Step 3.
+
+**Step 2 – initialise Spec Kit** if `.claude/commands/` is missing:
+
+```bash
+/opt/homebrew/bin/specify init . --ai claude --ignore-agent-tools --no-git
+```
+
+Note: `specify version` (not `--version`) is the correct command to check the version.
+If the command fails (e.g. GitHub rate limit), copy the bundled template manually:
+
+```bash
+cp -r /path/to/speckit-autopilot/templates/spec-kit-claude/. .
+```
+
+**Step 3 – proceed with bootstrap** regardless of whether Spec Kit is available.
+Spec Kit commands (`/speckit.*`) are only needed at implementation time (`/ship-product`).

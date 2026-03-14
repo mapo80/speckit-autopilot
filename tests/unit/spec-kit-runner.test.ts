@@ -197,12 +197,18 @@ describe("readTemplateFile", () => {
 // ---------------------------------------------------------------------------
 
 describe("SpecKitRunner constructor", () => {
-  it("throws when no API key is available", () => {
+  it("constructs without API key when claude CLI is available (cli mode)", () => {
     const savedKey = process.env.ANTHROPIC_API_KEY;
     delete process.env.ANTHROPIC_API_KEY;
 
     try {
-      expect(() => new SpecKitRunner("/tmp")).toThrow(/ANTHROPIC_API_KEY/);
+      // With dual-mode support: if claude CLI is available, no throw
+      // (the mocked spec-kit-runner-mocked.test.ts covers the failure case)
+      const runner = new SpecKitRunner("/tmp");
+      expect(runner.getMode()).toBe("cli");
+    } catch (err) {
+      // If claude CLI is not available in this env, error should mention claude CLI
+      expect((err as Error).message).toMatch(/claude CLI/);
     } finally {
       if (savedKey !== undefined) process.env.ANTHROPIC_API_KEY = savedKey;
     }

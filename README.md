@@ -7,13 +7,14 @@ to autonomously ship full products and individual features, one spec at a time.
 
 - **Greenfield mode** – read `docs/product.md`, generate a backlog, and implement every feature iteratively
 - **Brownfield mode** – analyse an existing repo and implement a single targeted feature
+- **Dual-mode runner** – uses `claude --print` CLI (default) or `@anthropic-ai/sdk` (when `ANTHROPIC_API_KEY` is set)
 - **Compaction-safe** – survives `/compact`, session restarts, and IDE reboots via file-based state
 - **Spec Kit integration** – drives the full `/speckit.*` workflow per feature
 - **Acceptance gating** – blocks completion if lint, tests, or coverage do not pass
 
 ## Requirements
 
-- Claude Code >= 1.0.0
+- Claude Code >= 2.0.0 (`claude` CLI available in PATH)
 - Node.js >= 18
 - [Spec Kit](https://speckit.dev) (`specify` CLI) – optional at bootstrap time, required at implementation time
 
@@ -21,47 +22,20 @@ to autonomously ship full products and individual features, one spec at a time.
 
 ## Installation
 
-### Load the plugin in Claude Code
-
 ```bash
-# Clone the plugin
-git clone https://github.com/your-org/speckit-autopilot
+git clone https://github.com/mapo80/speckit-autopilot
 cd speckit-autopilot
 npm install
-
-# Load via --plugin-dir flag
-claude --plugin-dir /path/to/speckit-autopilot
-```
-
-### Local development setup
-
-```bash
-npm install
 npm run build
-npm test
+
+# Install skills globally for Claude Code
+bash install.sh
 ```
 
----
+The `install.sh` script copies the skill definitions into `~/.claude/skills/speckit-autopilot/`
+so they are available in every Claude Code session.
 
-## Local testing with --plugin-dir
-
-Start Claude Code pointing at the plugin directory:
-
-```bash
-claude --plugin-dir /absolute/path/to/speckit-autopilot
-```
-
-Verify the plugin loaded by typing `/speckit-autopilot:status` in the chat.
-You should see the status report (or a "no state found" message if this is a fresh repo).
-
-Run the smoke test for the example product:
-
-```bash
-# In the target repo (e.g. examples/simple-demo as the project root)
-claude --plugin-dir /path/to/speckit-autopilot
-# Then run:
-# /speckit-autopilot:bootstrap-product
-```
+Restart Claude Code (or open a new session) after running the script.
 
 ---
 
@@ -98,7 +72,7 @@ Write your product description following this structure:
 ### 2. Bootstrap the backlog
 
 ```
-/speckit-autopilot:bootstrap-product
+/bootstrap-product
 ```
 
 Creates:
@@ -109,7 +83,7 @@ Creates:
 ### 3. Ship the entire product
 
 ```
-/speckit-autopilot:ship-product
+/ship-product
 ```
 
 The plugin will:
@@ -122,7 +96,7 @@ The plugin will:
 ### 4. Check progress at any time
 
 ```
-/speckit-autopilot:status
+/status
 ```
 
 ---
@@ -136,13 +110,13 @@ Use this flow when adding a feature to an existing codebase.
 ### 2. Run ship-feature
 
 ```
-/speckit-autopilot:ship-feature "user authentication"
+/ship-feature "user authentication"
 ```
 
 Or without arguments to pick the next open backlog item:
 
 ```
-/speckit-autopilot:ship-feature
+/ship-feature
 ```
 
 The plugin will:
@@ -158,14 +132,11 @@ The plugin will:
 If Claude Code compacts the context or you restart the session:
 
 ```
-/speckit-autopilot:resume-loop
+/resume-loop
 ```
 
 The plugin reads `docs/autopilot-state.json` and `docs/iteration-log.md`
 and resumes from the exact phase where work stopped.
-
-The `SessionStart` hook also fires automatically after a compact and prints
-the current state to help Claude Code orient itself.
 
 ---
 
@@ -173,11 +144,11 @@ the current state to help Claude Code orient itself.
 
 | Command | Description |
 |---------|-------------|
-| `/speckit-autopilot:bootstrap-product` | Parse `docs/product.md` → roadmap + backlog + state |
-| `/speckit-autopilot:ship-product` | Ship all open features iteratively |
-| `/speckit-autopilot:ship-feature [target]` | Ship one feature (greenfield or brownfield) |
-| `/speckit-autopilot:resume-loop` | Resume after /compact or restart |
-| `/speckit-autopilot:status` | Show current phase, backlog summary, last error |
+| `/bootstrap-product` | Parse `docs/product.md` → roadmap + backlog + state |
+| `/ship-product` | Ship all open features iteratively |
+| `/ship-feature [target]` | Ship one feature (greenfield or brownfield) |
+| `/resume-loop` | Resume after /compact or restart |
+| `/status` | Show current phase, backlog summary, last error |
 
 ---
 
@@ -193,17 +164,6 @@ All state is stored in the **target repo** (not the plugin directory):
 | `docs/autopilot-state.json` | Runtime: current phase, failure counts, coverage |
 | `docs/brownfield-snapshot.md` | Generated: tech stack and integration points |
 | `docs/iteration-log.md` | Log: all events, snapshots, and gate results |
-
----
-
-## Hooks
-
-| Hook | Trigger | Effect |
-|------|---------|--------|
-| `SessionStart` (matcher: `compact`) | After `/compact` | Prints resume state summary |
-| `PreCompact` | Before compaction | Saves snapshot to iteration-log.md |
-| `PostCompact` | After compaction | Updates compactCount in state |
-| `TaskCompleted` | On task done | Blocks if acceptance criteria not met |
 
 ---
 
@@ -244,23 +204,24 @@ npm run build
 
 ```
 speckit-autopilot/
-├── .claude-plugin/
-│   └── plugin.json          # Plugin manifest
 ├── agents/                  # Agent definitions (markdown)
 ├── examples/
 │   └── simple-demo/         # Example product with expected artifacts
-├── hooks/
-│   └── hooks.json           # Hook configuration
-├── scripts/                 # Hook scripts (.mjs)
-├── skills/                  # Skill definitions (markdown)
+├── skills/                  # Skill definitions (source — copied by install.sh)
+│   ├── bootstrap-product.md
+│   ├── ship-product.md
+│   ├── ship-feature.md
+│   ├── resume-loop.md
+│   └── status.md
 ├── src/
-│   ├── core/                # Business logic modules
-│   └── cli/                 # CLI orchestration modules
+│   ├── core/                # Business logic (SpecKitRunner, feature-picker, …)
+│   └── cli/                 # CLI orchestration (ship-product, ship-feature, …)
 ├── tests/
-│   ├── unit/                # Unit tests
-│   └── integration/         # Integration tests
+│   ├── unit/
+│   └── integration/
+├── install.sh               # Installs skills into ~/.claude/skills/
 ├── CHANGELOG.md
-├── CLAUDE.md                # Operational rules for the plugin
+├── CLAUDE.md                # Operational rules
 └── README.md
 ```
 

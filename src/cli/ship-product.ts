@@ -152,6 +152,19 @@ export async function shipProduct(opts: ShipProductOptions): Promise<ShipProduct
   let state = store.read();
   let backlog = readBacklog(root);
 
+  // Reset any features stuck in_progress from a previous interrupted run
+  // so pickNextFeature can re-select them on this run.
+  const hadStuck = backlog.features.some((f) => f.status === "in_progress");
+  if (hadStuck) {
+    backlog = {
+      ...backlog,
+      features: backlog.features.map((f) =>
+        f.status === "in_progress" ? { ...f, status: "open" } : f
+      ),
+    };
+    writeBacklog(root, backlog);
+  }
+
   const result: ShipProductResult = {
     completed: 0,
     blocked: 0,

@@ -6,11 +6,21 @@ Works for both **greenfield** and **brownfield** repositories.
 ## Arguments
 
 The skill accepts an optional feature target:
-- If provided as text (e.g. `/speckit-autopilot:ship-feature "user authentication"`):
+- If provided as text (e.g. `/ship-feature "user authentication"`):
   look up the matching feature in the backlog by title or ID
 - If not provided: pick the next open feature from `docs/product-backlog.yaml`
 - If `docs/product-backlog.yaml` does not exist: treat as a standalone brownfield feature
   using the user's description
+
+## Pre-flight: Spec Kit check
+
+**Before anything else**, verify Spec Kit is initialised:
+check that `.claude/commands/speckit.specify.md` exists in the current directory.
+
+- If missing: run `/opt/homebrew/bin/specify init . --ai claude --ignore-agent-tools --no-git`
+- If `specify` is not available or fails: copy bundled template with
+  `cp -r <speckit-autopilot>/templates/spec-kit-claude/. .`
+- Do NOT proceed until `/speckit.specify` is available as a command
 
 ## Brownfield detection
 
@@ -28,7 +38,7 @@ If brownfield:
 
 1. Detect greenfield vs brownfield (see above)
 2. Resolve the target feature (from backlog or user input)
-3. If greenfield and no backlog: run `/speckit-autopilot:bootstrap-product` first
+3. If greenfield and no backlog: run `/bootstrap-product` first
 4. Mark feature `in_progress` in backlog and state
 5. Run Spec Kit workflow:
    a. `/speckit.constitution` – only if missing

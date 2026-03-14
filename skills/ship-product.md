@@ -10,10 +10,13 @@ the full Spec Kit workflow, one feature at a time, until:
 
 ## Pre-flight checks
 
-1. If `docs/product-backlog.yaml` does NOT exist → invoke `/speckit-autopilot:bootstrap-product` first
+1. If `docs/product-backlog.yaml` does NOT exist → invoke `/bootstrap-product` first
 2. If `docs/autopilot-state.json` does NOT exist → same as above
-3. Detect Spec Kit: check `specify --version` or `.speckit/` directory
-   - If missing: run `specify init . --ai claude --ai-skills`
+3. **Verify Spec Kit is initialised**: check that `.claude/commands/speckit.specify.md` exists
+   - If missing: run `/opt/homebrew/bin/specify init . --ai claude --ignore-agent-tools --no-git`
+   - If `specify` fails or is unavailable: copy bundled template with
+     `cp -r <speckit-autopilot>/templates/spec-kit-claude/. .`
+   - Do NOT proceed until `/speckit.specify` is available as a command
 
 ## Main loop (repeat until done or blocked)
 
@@ -67,4 +70,4 @@ When backlog has no more open features:
 
 - Catch and log all errors to `lastError` in `autopilot-state.json` and `iteration-log.md`
 - Never silently swallow errors
-- If a Spec Kit command is not available, fall back to inline implementation guided by the spec
+- If a Spec Kit command is unavailable, stop and report — do NOT fall back to inline implementation

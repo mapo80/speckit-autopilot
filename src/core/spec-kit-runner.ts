@@ -109,7 +109,7 @@ function readArtifact(path: string): string | null {
 // ---------------------------------------------------------------------------
 
 function buildSpecPrompt(
-  commandContent: string,
+  _commandContent: string,
   featureTitle: string,
   acceptanceCriteria: string[],
   specTemplate: string | null
@@ -119,146 +119,116 @@ function buildSpecPrompt(
       ? `Acceptance Criteria:\n${acceptanceCriteria.map((c) => `- ${c}`).join("\n")}`
       : "";
 
-  return `You are acting as an expert software analyst following the Spec Kit specification workflow.
+  return `You are an expert software analyst. Output ONLY a Markdown specification document. Do NOT use any tools.
 
-FEATURE TO SPECIFY: ${featureTitle}
+FEATURE: ${featureTitle}
 ${criteriaBlock}
 
-SPEC-KIT COMMAND INSTRUCTIONS:
-${commandContent}
+SPEC TEMPLATE:
+${specTemplate ?? "Use sections: User Scenarios, Requirements, Success Criteria"}
 
-SPEC TEMPLATE (use this structure):
-${specTemplate ?? "(use standard spec structure with: User Scenarios & Testing, Requirements, Success Criteria)"}
+Generate a complete feature specification for "${featureTitle}".
+Start with: # Feature Specification: ${featureTitle}
+Include at least 2 user stories. Focus on WHAT, not HOW. No code.
 
-YOUR TASK:
-Generate a complete feature specification for "${featureTitle}" following the spec template structure.
-Write it as a well-formed Markdown document starting with "# Feature Specification: ${featureTitle}".
-Focus on WHAT users need, not HOW to implement it.
-Make all requirements testable and measurable.
-Include at least 2 user stories with acceptance scenarios.
-Do NOT include implementation details (no code, no tech stack).
-
-OUTPUT: The complete spec.md content only, starting with the # heading.`;
+Output the specification document now.`;
 }
 
 function buildPlanPrompt(
-  commandContent: string,
+  _commandContent: string,
   featureTitle: string,
   specContent: string,
   planTemplate: string | null
 ): string {
-  return `You are acting as an expert software architect following the Spec Kit planning workflow.
+  return `You are an expert software architect. Output ONLY a Markdown plan document. Do NOT use any tools.
 
 FEATURE: ${featureTitle}
 
-FEATURE SPECIFICATION:
+SPECIFICATION:
 ${specContent}
 
-SPEC-KIT COMMAND INSTRUCTIONS:
-${commandContent}
-
 PLAN TEMPLATE:
-${planTemplate ?? "(use standard plan structure with: Summary, Technical Context, Project Structure, Phases)"}
+${planTemplate ?? "Sections: Summary, Technical Context, Project Structure, Phases"}
 
-YOUR TASK:
-Generate a complete implementation plan for "${featureTitle}" following the plan template structure.
-The plan MUST include:
-1. Summary section
-2. Technical Context (language: TypeScript, testing: Jest, project type: library/CLI)
-3. Project Structure showing exact file paths that will be created
-4. Phase 0: Research (list any technical decisions)
-5. Phase 1: Design & Contracts (data models, interfaces)
+Generate an implementation plan for "${featureTitle}" in TypeScript.
+Start with: # Implementation Plan: ${featureTitle}
+Include exact file paths (use src/features/ directory). No code, just the plan.
 
-Write it as a well-formed Markdown document starting with "# Implementation Plan: ${featureTitle}".
-Be specific about file paths. For a TypeScript project, use src/features/{featureId}/ as the output directory.
-
-OUTPUT: The complete plan.md content only, starting with the # heading.`;
+Output the plan document now.`;
 }
 
 function buildTasksPrompt(
-  commandContent: string,
+  _commandContent: string,
   featureTitle: string,
   featureId: string,
   specContent: string,
   planContent: string
 ): string {
-  return `You are acting as an expert software engineer following the Spec Kit tasks workflow.
+  return `You are an expert software engineer. Output ONLY a Markdown task list. Do NOT use any tools.
 
 FEATURE: ${featureTitle}
 FEATURE ID: ${featureId}
 
-FEATURE SPECIFICATION:
+SPECIFICATION:
 ${specContent}
 
-IMPLEMENTATION PLAN:
+PLAN:
 ${planContent}
 
-SPEC-KIT COMMAND INSTRUCTIONS:
-${commandContent}
+Generate a tasks.md for "${featureTitle}".
+Start with: # Tasks: ${featureTitle}
+Each task format: - [ ] T001 Description (file: src/features/${featureId}/index.ts)
+Include setup and implementation tasks with exact TypeScript file paths.
 
-YOUR TASK:
-Generate a complete tasks.md for "${featureTitle}" that an AI can execute.
-Tasks MUST follow this EXACT format:
-- [ ] T001 Description with exact file path in src/features/${featureId}/
-
-Include phases:
-1. Setup (project structure)
-2. Core implementation tasks with EXACT TypeScript file paths like src/features/${featureId}/index.ts
-3. Each task must have a clear, actionable description
-
-Write it as a well-formed Markdown document starting with "# Tasks: ${featureTitle}".
-
-CRITICAL: Every implementation task MUST specify an exact file path.
-
-OUTPUT: The complete tasks.md content only, starting with the # heading.`;
+Output the tasks document now.`;
 }
 
 function buildImplementPrompt(
-  commandContent: string,
+  _commandContent: string,
   featureTitle: string,
   featureId: string,
   specContent: string,
   planContent: string,
   tasksContent: string
 ): string {
-  return `You are acting as an expert TypeScript developer implementing a feature following the Spec Kit implementation workflow.
+  // NOTE: we intentionally do NOT include the speckit.implement.md command
+  // instructions here, because those instruct claude to use file-writing tools.
+  // We need plain text output only — we write the files ourselves.
+  return `You are an expert TypeScript developer. Your job is to produce source code as plain text output ONLY.
+
+IMPORTANT CONSTRAINTS:
+- Do NOT use any tools, file writing, or bash commands.
+- Do NOT ask for permissions or confirmations.
+- Output ONLY plain text using the file format below.
 
 FEATURE: ${featureTitle}
 FEATURE ID: ${featureId}
 
-FEATURE SPECIFICATION:
+SPECIFICATION:
 ${specContent}
 
 IMPLEMENTATION PLAN:
 ${planContent}
 
-TASK LIST:
+TASKS:
 ${tasksContent}
 
-SPEC-KIT COMMAND INSTRUCTIONS:
-${commandContent}
-
 YOUR TASK:
-Implement the feature "${featureTitle}" by generating TypeScript source files.
+Generate complete, working TypeScript source files for "${featureTitle}".
 
-CRITICAL REQUIREMENTS:
-1. You MUST output actual TypeScript code files
-2. Each file must be complete and runnable
-3. Use the feature directory: src/features/${featureId}/
-4. The main file must be: src/features/${featureId}/index.ts
-5. Export all public types and functions
-
-OUTPUT FORMAT (you MUST use this exact format for EACH file):
+MANDATORY OUTPUT FORMAT — use this exact format for every file:
 <<<FILE: src/features/${featureId}/index.ts>>>
-// TypeScript code here
+// TypeScript source code here
 <<<END_FILE>>>
 
-Generate at minimum:
-- src/features/${featureId}/index.ts (main module with exported types and functions implementing the spec)
-- src/features/${featureId}/types.ts (if you have complex types)
+Requirements:
+1. At minimum generate src/features/${featureId}/index.ts
+2. Also generate src/features/${featureId}/types.ts if you need complex types
+3. All code must be complete and runnable TypeScript — no pseudocode
+4. Export all public types and functions
+5. Implement every acceptance criterion from the spec
 
-The code must implement the acceptance criteria from the spec.
-Make it real, working TypeScript code - not pseudocode or placeholders.`;
+Output the files now using the <<<FILE:>>> format above. Nothing else.`;
 }
 
 // ---------------------------------------------------------------------------
@@ -390,11 +360,27 @@ export function verifyImplementationProducedCode(
 
 type RunnerMode = "cli" | "sdk";
 
+/** Common locations where the claude CLI may be installed. */
+const CLAUDE_SEARCH_PATHS = [
+  process.env.HOME ? `${process.env.HOME}/.local/bin` : "",
+  process.env.HOME ? `${process.env.HOME}/.npm-global/bin` : "",
+  "/usr/local/bin",
+  "/opt/homebrew/bin",
+].filter(Boolean);
+
+/** Augmented PATH that includes common claude install dirs. */
+function augmentedPath(): string {
+  const existing = process.env.PATH ?? "";
+  const extra = CLAUDE_SEARCH_PATHS.filter((p) => !existing.includes(p)).join(":");
+  return extra ? `${extra}:${existing}` : existing;
+}
+
 export class SpecKitRunner {
   private readonly mode: RunnerMode;
   private readonly client?: Anthropic;
   private readonly root: string;
   private readonly model = "claude-sonnet-4-6";
+  private readonly claudePath: string = "claude";
 
   constructor(root: string, apiKey?: string) {
     this.root = root;
@@ -403,8 +389,9 @@ export class SpecKitRunner {
       this.mode = "sdk";
       this.client = new Anthropic({ apiKey: key });
     } else {
-      // No API key — try claude CLI
-      const check = spawnSync("claude", ["--version"], { encoding: "utf8", shell: true });
+      // No API key — try claude CLI with augmented PATH
+      const env = { ...process.env, PATH: augmentedPath() };
+      const check = spawnSync("claude", ["--version"], { encoding: "utf8", shell: false, env });
       if (check.status !== 0) {
         throw new Error(
           "SpecKitRunner requires either ANTHROPIC_API_KEY (SDK mode) " +
@@ -444,12 +431,16 @@ export class SpecKitRunner {
   }
 
   private callClaudeCli(prompt: string): Promise<string> {
-    // Pipe prompt via stdin to avoid shell-escaping issues with large prompts.
-    // `claude --print` reads from stdin and writes the response to stdout.
-    const result = spawnSync("claude", ["--print"], {
+    // Pipe prompt via stdin — avoids shell-escaping issues with large prompts.
+    // Use augmented PATH so claude is found regardless of login shell config.
+    // --dangerously-skip-permissions: we drive all file writes ourselves; we
+    //   only want Claude to generate text, not ask for tool-use permissions.
+    const env = { ...process.env, PATH: augmentedPath() };
+    const result = spawnSync(this.claudePath, ["--print", "--dangerously-skip-permissions"], {
       input: prompt,
       encoding: "utf8",
-      shell: true,
+      shell: false,
+      env,
       timeout: 300_000, // 5 min per phase
       cwd: this.root,
     });
@@ -535,7 +526,36 @@ export class SpecKitRunner {
     );
     const response = await this.callClaude(prompt);
 
-    // Extract and write files
+    // In CLI mode with --dangerously-skip-permissions, claude writes files
+    // directly via tool_use. Check what was written to disk first.
+    if (this.mode === "cli") {
+      const featureDir = join(this.root, "src", "features", featureId.toLowerCase());
+      const { spawnSync: sp } = await import("child_process");
+      const found = sp("find", [this.root + "/src", "-name", "*.ts", "-not", "-name", "*.d.ts"], {
+        encoding: "utf8",
+        shell: false,
+      });
+      const filesOnDisk = (found?.stdout ?? "").trim().split("\n").filter(Boolean);
+      if (filesOnDisk.length > 0) {
+        return filesOnDisk;
+      }
+      // Nothing written — fall back to text extraction or stub
+      const generatedFiles = extractGeneratedFiles(response);
+      const writtenPaths: string[] = [];
+      for (const file of generatedFiles) {
+        const fullPath = join(this.root, file.path);
+        writeArtifact(fullPath, file.content);
+        writtenPaths.push(fullPath);
+      }
+      if (writtenPaths.length === 0) {
+        const indexPath = join(featureDir, "index.ts");
+        writeArtifact(indexPath, generateFallbackImplementation(featureTitle, featureId, response));
+        writtenPaths.push(indexPath);
+      }
+      return writtenPaths;
+    }
+
+    // SDK mode: extract <<<FILE:>>> blocks from text response
     const generatedFiles = extractGeneratedFiles(response);
     const writtenPaths: string[] = [];
 

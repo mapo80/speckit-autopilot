@@ -28,7 +28,11 @@ Resume interrupted autopilot work after a `/compact`, session restart, or manual
    ================================
    ```
 
-5. Resume Spec Kit workflow from the correct phase:
+5. **Verify Spec Kit is initialised** before resuming: check `.claude/commands/speckit.specify.md` exists.
+   If missing, run `/opt/homebrew/bin/specify init . --ai claude --ignore-agent-tools --no-git`
+   or copy bundled template. Do NOT resume until `/speckit.*` commands are available.
+
+6. Resume Spec Kit workflow from the correct phase:
    - `spec`      → start from `/speckit.specify`
    - `clarify`   → start from `/speckit.clarify`
    - `plan`      → start from `/speckit.plan`
@@ -38,7 +42,7 @@ Resume interrupted autopilot work after a `/compact`, session restart, or manual
    - `qa`        → re-run QA gate only
    - `done`      → feature was done, move to next
 
-6. Continue the main loop from `ship-product` after resuming the current feature
+7. Continue the main loop from `ship-product` after resuming the current feature
 
 ## Edge cases
 
