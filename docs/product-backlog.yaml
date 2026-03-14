@@ -1,0 +1,71 @@
+version: '1'
+generatedAt: '2026-03-14T17:23:00.802Z'
+features:
+  - id: F-001
+    title: Feature 1 - Task CRUD
+    epic: in scope
+    status: done
+    priority: high
+    dependsOn: []
+    acceptanceCriteria:
+      - creare un task
+      - modificare titolo e descrizione
+      - eliminare un task
+      - vedere l’elenco dei task
+    estimatedComplexity: medium
+    specKitBranch: feature/f-001
+    notes: ''
+  - id: F-002
+    title: Feature 2 - Workflow a stati
+    epic: in scope
+    status: done
+    priority: medium
+    dependsOn:
+      - F-001
+    acceptanceCriteria:
+      - Todo
+      - Doing
+      - Done
+    estimatedComplexity: medium
+    specKitBranch: feature/f-002
+    notes: ''
+  - id: F-003
+    title: Feature 3 - Filtri e ricerca
+    epic: in scope
+    status: done
+    priority: low
+    dependsOn:
+      - F-004
+    acceptanceCriteria:
+      - filtrare per stato
+      - cercare task per testo nel titolo
+    estimatedComplexity: medium
+    specKitBranch: feature/f-003
+    notes: ''
+  - id: F-004
+    title: Feature 4 - Persistenza locale
+    epic: in scope
+    status: done
+    priority: medium
+    dependsOn:
+      - F-002
+    acceptanceCriteria:
+      - Feature 4 - Persistenza locale works as described
+    estimatedComplexity: medium
+    specKitBranch: feature/f-004
+    notes: ''
+  - id: F-005
+    title: Feature 5 - Dashboard minima
+    epic: in scope
+    status: done
+    priority: low
+    dependsOn:
+      - F-003
+    acceptanceCriteria:
+      - numero totale task
+      - numero task Todo
+      - numero task Doing
+      - numero task Done
+    estimatedComplexity: medium
+    specKitBranch: feature/f-005
+    notes: ''

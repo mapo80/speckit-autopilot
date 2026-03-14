@@ -1,0 +1,28 @@
+{
+  "hooks": [
+    {
+      "event": "SessionStart",
+      "matcher": "compact",
+      "description": "After a /compact, print a concise resume of the current autopilot state so Claude can continue without relying on chat history",
+      "command": "node scripts/session-start-compact.mjs"
+    },
+    {
+      "event": "PreCompact",
+      "matcher": "auto|manual",
+      "description": "Before compaction, snapshot current phase and progress into docs/iteration-log.md",
+      "command": "node scripts/precompact-snapshot.mjs"
+    },
+    {
+      "event": "PostCompact",
+      "matcher": "auto|manual",
+      "description": "After compaction, record the compact summary and realign docs/autopilot-state.json",
+      "command": "node scripts/postcompact-log.mjs"
+    },
+    {
+      "event": "TaskCompleted",
+      "matcher": ".*",
+      "description": "Block task completion if acceptance criteria (lint/tests/coverage) have not passed",
+      "command": "node scripts/task-completed-gate.mjs"
+    }
+  ]
+}

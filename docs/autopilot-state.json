@@ -1,0 +1,26 @@
+{
+  "version": "1",
+  "mode": "greenfield",
+  "status": "completed",
+  "activeFeature": null,
+  "currentPhase": null,
+  "nextFeature": null,
+  "lastError": null,
+  "consecutiveFailures": 0,
+  "maxFailures": 3,
+  "lastCoverage": null,
+  "lastTestRun": "2026-03-14T17:23:19.211Z",
+  "lastLintPassed": null,
+  "lastTestsPassed": null,
+  "gatingEnabled": true,
+  "acceptanceCriteria": {
+    "requireLintPass": true,
+    "requireTestsPass": true,
+    "minCoverage": null,
+    "items": []
+  },
+  "compactCount": 0,
+  "lastCompactAt": null,
+  "createdAt": "2026-03-14T17:23:00.805Z",
+  "updatedAt": "2026-03-14T17:23:19.212Z"
+}

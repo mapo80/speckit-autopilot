@@ -1,0 +1,80 @@
+version: "1"
+generatedAt: "2024-01-01T00:00:00.000Z"
+features:
+  - id: F-001
+    title: "Feature 1 - Task CRUD"
+    epic: Core
+    status: open
+    priority: high
+    dependsOn: []
+    acceptanceCriteria:
+      - "User can create a task with title and description"
+      - "User can edit the title and description of an existing task"
+      - "User can delete a task"
+      - "User can view the list of all tasks"
+    estimatedComplexity: medium
+    specKitBranch: ""
+    notes: "Foundational feature – all others depend on it"
+
+  - id: F-002
+    title: "Feature 2 - Workflow States"
+    epic: Core
+    status: open
+    priority: medium
+    dependsOn:
+      - F-001
+    acceptanceCriteria:
+      - "Each task displays one of: Todo, Doing, Done"
+      - "User can change the state of a task with a single interaction"
+      - "State change is reflected immediately in the UI"
+    estimatedComplexity: medium
+    specKitBranch: ""
+    notes: ""
+
+  - id: F-003
+    title: "Feature 4 - Local Persistence"
+    epic: Core
+    status: open
+    priority: medium
+    dependsOn:
+      - F-001
+    acceptanceCriteria:
+      - "Tasks are saved to localStorage on every change"
+      - "Tasks are loaded from localStorage on page load"
+      - "After a browser refresh, all tasks and their states are restored"
+    estimatedComplexity: medium
+    specKitBranch: ""
+    notes: "Implement before filters to avoid data loss during testing"
+
+  - id: F-004
+    title: "Feature 3 - Filters and Search"
+    epic: Core
+    status: open
+    priority: low
+    dependsOn:
+      - F-001
+    acceptanceCriteria:
+      - "User can filter tasks by state (Todo / Doing / Done / All)"
+      - "User can search tasks by text contained in the title"
+      - "Filter and search can be combined"
+      - "No tasks are deleted when filtering – only display is changed"
+    estimatedComplexity: medium
+    specKitBranch: ""
+    notes: ""
+
+  - id: F-005
+    title: "Feature 5 - Minimal Dashboard"
+    epic: Core
+    status: open
+    priority: low
+    dependsOn:
+      - F-001
+    acceptanceCriteria:
+      - "User sees total task count"
+      - "User sees count of tasks in Todo state"
+      - "User sees count of tasks in Doing state"
+      - "User sees count of tasks in Done state"
+      - "Counters update immediately when a task is added, deleted, or changes state"
+    estimatedComplexity: low
+    specKitBranch: ""
+    notes: ""

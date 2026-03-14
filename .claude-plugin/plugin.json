@@ -1,0 +1,57 @@
+{
+  "name": "speckit-autopilot",
+  "version": "0.1.0",
+  "description": "Autonomous Spec Kit orchestrator: ship full products and individual features with AI-driven spec-first iteration",
+  "author": "speckit-autopilot contributors",
+  "skills": [
+    {
+      "name": "bootstrap-product",
+      "description": "Read docs/product.md and produce roadmap, backlog and initial autopilot state. Does NOT implement any code.",
+      "path": "skills/bootstrap-product.md"
+    },
+    {
+      "name": "ship-product",
+      "description": "Iteratively implement every feature in the backlog using Spec Kit, one feature at a time until completion or a blocking error.",
+      "path": "skills/ship-product.md"
+    },
+    {
+      "name": "ship-feature",
+      "description": "Implement a single feature (greenfield or brownfield) using the full Spec Kit workflow.",
+      "path": "skills/ship-feature.md"
+    },
+    {
+      "name": "resume-loop",
+      "description": "Resume interrupted autopilot work by re-reading state files. Safe after /compact or session restart.",
+      "path": "skills/resume-loop.md"
+    },
+    {
+      "name": "status",
+      "description": "Show a concise status report: active feature, current phase, backlog summary, last error, test/coverage results.",
+      "path": "skills/status.md"
+    }
+  ],
+  "agents": [
+    {
+      "name": "product-planner",
+      "description": "Analyses docs/product.md and produces structured roadmap and backlog artifacts",
+      "path": "agents/product-planner.md"
+    },
+    {
+      "name": "brownfield-analyst",
+      "description": "Inspects an existing repository and produces docs/brownfield-snapshot.md",
+      "path": "agents/brownfield-analyst.md"
+    },
+    {
+      "name": "spec-auditor",
+      "description": "Audits spec artifacts for completeness, ambiguity and consistency",
+      "path": "agents/spec-auditor.md"
+    },
+    {
+      "name": "qa-gatekeeper",
+      "description": "Checks acceptance criteria, test results and coverage before marking a feature done",
+      "path": "agents/qa-gatekeeper.md"
+    }
+  ],
+  "hooks": "hooks/hooks.json",
+  "minClaudeCodeVersion": "1.0.0"
+}
