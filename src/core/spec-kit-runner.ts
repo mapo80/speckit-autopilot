@@ -388,21 +388,37 @@ export function verifyImplementationProducedCode(
 // Main SpecKitRunner
 // ---------------------------------------------------------------------------
 
+type RunnerMode = "cli" | "sdk";
+
 export class SpecKitRunner {
-  private readonly client: Anthropic;
+  private readonly mode: RunnerMode;
+  private readonly client?: Anthropic;
   private readonly root: string;
-  private readonly model = "claude-opus-4-5";
+  private readonly model = "claude-sonnet-4-6";
 
   constructor(root: string, apiKey?: string) {
-    const key = apiKey ?? process.env.ANTHROPIC_API_KEY;
-    if (!key) {
-      throw new Error(
-        "ANTHROPIC_API_KEY environment variable is required for SpecKitRunner. " +
-          "Set it before running the phase runner."
-      );
-    }
-    this.client = new Anthropic({ apiKey: key });
     this.root = root;
+    const key = apiKey ?? process.env.ANTHROPIC_API_KEY;
+    if (key) {
+      this.mode = "sdk";
+      this.client = new Anthropic({ apiKey: key });
+    } else {
+      // No API key — try claude CLI
+      const check = spawnSync("claude", ["--version"], { encoding: "utf8", shell: true });
+      if (check.status !== 0) {
+        throw new Error(
+          "SpecKitRunner requires either ANTHROPIC_API_KEY (SDK mode) " +
+            "or the claude CLI installed and authenticated (CLI mode). " +
+            "Run `claude --version` to verify the CLI is available."
+        );
+      }
+      this.mode = "cli";
+    }
+  }
+
+  /** Expose mode for testing / logging */
+  getMode(): RunnerMode {
+    return this.mode;
   }
 
   private specsDir(featureId: string): string {
@@ -410,17 +426,40 @@ export class SpecKitRunner {
   }
 
   private async callClaude(prompt: string): Promise<string> {
+    return this.mode === "sdk" ? this.callClaudeSdk(prompt) : this.callClaudeCli(prompt);
+  }
+
+  private async callClaudeSdk(prompt: string): Promise<string> {
+    if (!this.client) throw new Error("Anthropic client not initialized");
     const message = await this.client.messages.create({
       model: this.model,
       max_tokens: 8192,
       messages: [{ role: "user", content: prompt }],
     });
-
     const textContent = message.content.find((c) => c.type === "text");
     if (!textContent || textContent.type !== "text") {
       throw new Error("Claude returned no text content");
     }
     return textContent.text;
+  }
+
+  private callClaudeCli(prompt: string): Promise<string> {
+    // Pipe prompt via stdin to avoid shell-escaping issues with large prompts.
+    // `claude --print` reads from stdin and writes the response to stdout.
+    const result = spawnSync("claude", ["--print"], {
+      input: prompt,
+      encoding: "utf8",
+      shell: true,
+      timeout: 300_000, // 5 min per phase
+      cwd: this.root,
+    });
+    if (result.status !== 0 || result.error) {
+      const msg = result.stderr ?? result.error?.message ?? "unknown error";
+      throw new Error(`claude CLI failed (exit ${result.status}): ${msg.slice(0, 500)}`);
+    }
+    const output = (result.stdout ?? "").trim();
+    if (!output) throw new Error("claude CLI returned empty response");
+    return Promise.resolve(output);
   }
 
   // Phase: spec

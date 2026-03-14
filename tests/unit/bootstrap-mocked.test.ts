@@ -58,14 +58,13 @@ describe("initSpecKit – mocked spawnSync", () => {
     rmSync(tmp, { recursive: true, force: true });
   });
 
-  it("returns ok:false when specify exits 0 but .specify and .claude dirs missing (lines 41-48)", () => {
-    // Simulate specify init exiting 0 but no directories were created
+  it("returns ok:true when specify exits 0 but dirs missing (bundled template rescues)", () => {
+    // specify init exits 0 but no dirs created — copyBundledTemplate copies from bundle
     mockSpawnSync.mockReturnValue({ status: 0, stdout: "init output", stderr: "" });
 
     const result = initSpecKit(tmp);
-    // Dirs don't exist → should fall through to the directory check → ok:false
-    expect(result.ok).toBe(false);
-    expect(result.error).toContain(".specify/");
+    // Bundled template exists in repo → rescue → ok:true
+    expect(result.ok).toBe(true);
   });
 
   it("returns ok:true when specify exits 0 and .specify dir exists (line 48)", () => {
@@ -161,9 +160,9 @@ describe("bootstrapProduct – mocked specKit availability", () => {
     expect(result.message).toContain("SDK-only");
   });
 
-  it("calls scaffoldSpeckitDirs and adds note when specify available but init fails (lines 292, 305)", async () => {
+  it("uses bundled template when specify available but init fails (lines 292, 305)", async () => {
     // specify version → exit 0 (available)
-    // specify init → exit 1 (fails)
+    // specify init → exit 1 (fails) — bundled template rescues
     mockSpawnSync
       .mockReturnValueOnce({ status: 0, stdout: "1.0.0", stderr: "" }) // specify version
       .mockReturnValueOnce({ status: 1, stdout: "", stderr: "init failed" }); // specify init
@@ -171,12 +170,10 @@ describe("bootstrapProduct – mocked specKit availability", () => {
     const result = await bootstrapProduct(tmp);
     expect(result.success).toBe(true);
     expect(result.specKitAvailable).toBe(true);
-    expect(result.specKitInitialized).toBe(false);
-    // scaffoldSpeckitDirs should have run as fallback
-    expect(existsSync(join(tmp, ".speckit"))).toBe(true);
-    // Note about init failure
-    expect(result.message).toContain("NOTE:");
-    expect(result.message).toContain("minimal scaffold");
+    // Bundled template copied successfully → specKitInitialized:true
+    expect(result.specKitInitialized).toBe(true);
+    // .claude/commands/ should exist from bundled template
+    expect(existsSync(join(tmp, ".claude", "commands"))).toBe(true);
   });
 });
 

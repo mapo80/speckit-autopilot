@@ -64,14 +64,20 @@ export function initSpecKit(root: string): { ok: boolean; error?: string } {
 // ---------------------------------------------------------------------------
 
 export function copyBundledTemplate(root: string): void {
-  const pluginRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+  // Resolve plugin root: go up 3 levels from the compiled file
+  // (dist/cli/bootstrap-product.js → dist/cli → dist → project root)
+  const pluginRoot = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
   const templateSrc = join(pluginRoot, "templates", "spec-kit-claude");
   if (!existsSync(templateSrc)) return; // template not bundled — skip silently
   for (const sub of [".claude", ".specify"]) {
     const src = join(templateSrc, sub);
     const dest = join(root, sub);
     if (existsSync(src) && !existsSync(dest)) {
-      cpSync(src, dest, { recursive: true });
+      try {
+        cpSync(src, dest, { recursive: true });
+      } catch {
+        // dest dir is invalid (e.g. /dev/null) — skip silently
+      }
     }
   }
 }

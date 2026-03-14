@@ -5,7 +5,7 @@
  * Uses jest.unstable_mockModule for ESM-compatible module mocking.
  */
 import { describe, it, expect, beforeEach, afterEach, jest } from "@jest/globals";
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "fs";
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, existsSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 
@@ -27,7 +27,7 @@ await jest.unstable_mockModule("child_process", () => ({
   spawnSync: mockSpawnSync,
 }));
 
-const { verifyImplementationProducedCode, ensureSpecKitInitialized } = await import(
+const { verifyImplementationProducedCode, ensureSpecKitInitialized, SpecKitRunner } = await import(
   "../../src/core/spec-kit-runner.js"
 );
 
@@ -142,11 +142,106 @@ describe("ensureSpecKitInitialized – mocked specify init succeeds", () => {
     expect(result.ok).toBe(true);
   });
 
-  it("returns ok:false when specify init exits non-zero", () => {
+  it("returns ok:true when specify init exits non-zero but bundled template rescues", () => {
+    // specify init fails, but copyBundledTemplate copies from the bundled template dir
     mockSpawnSync.mockReturnValue({ status: 1, stdout: "", stderr: "init failed" });
 
     const result = ensureSpecKitInitialized(tmp);
-    expect(result.ok).toBe(false);
-    expect(result.error).toContain("init failed");
+    // Bundled template exists in the repo → rescue succeeds → ok:true
+    expect(result.ok).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SpecKitRunner – CLI mode (mocked spawnSync)
+// ---------------------------------------------------------------------------
+
+describe("SpecKitRunner – CLI mode via claude --print", () => {
+  let tmp: string;
+  beforeEach(() => {
+    tmp = makeTmp();
+    mkdirSync(join(tmp, "docs"), { recursive: true });
+    mockSpawnSync.mockReset();
+  });
+  afterEach(() => {
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  function setupCliMock(responses: string[]): void {
+    // First call: claude --version (constructor check)
+    mockSpawnSync.mockReturnValueOnce({ status: 0, stdout: "claude 1.0.0", stderr: "" });
+    // Subsequent calls: claude --print (one per phase)
+    for (const response of responses) {
+      mockSpawnSync.mockReturnValueOnce({ status: 0, stdout: response, stderr: "" });
+    }
+  }
+
+  it("selects CLI mode when no API key is provided and claude --version succeeds", () => {
+    mockSpawnSync.mockReturnValue({ status: 0, stdout: "claude 1.0.0", stderr: "" });
+    const runner = new SpecKitRunner(tmp);
+    expect(runner.getMode()).toBe("cli");
+  });
+
+  it("selects SDK mode when apiKey is provided", () => {
+    const runner = new SpecKitRunner(tmp, "test-api-key");
+    expect(runner.getMode()).toBe("sdk");
+  });
+
+  it("throws when no API key and claude --version fails", () => {
+    mockSpawnSync.mockReturnValue({ status: 1, stdout: "", stderr: "not found" });
+    expect(() => new SpecKitRunner(tmp)).toThrow(/claude CLI/);
+  });
+
+  it("writes spec.md via CLI mode", async () => {
+    setupCliMock([
+      "# Feature Specification: Task CRUD\n\nUsers can create, read, update, delete tasks.\n\n## Acceptance Scenarios\n- User creates task"
+    ]);
+    const runner = new SpecKitRunner(tmp);
+    await runner.runSpec("F-001", "Task CRUD", ["Create tasks", "Delete tasks"]);
+    const specPath = join(tmp, "docs", "specs", "f-001", "spec.md");
+    expect(existsSync(specPath)).toBe(true);
+  });
+
+  it("throws when claude --print returns non-zero", async () => {
+    // claude --version succeeds
+    mockSpawnSync.mockReturnValueOnce({ status: 0, stdout: "claude 1.0.0", stderr: "" });
+    // claude --print fails
+    mockSpawnSync.mockReturnValueOnce({ status: 1, stdout: "", stderr: "rate limit" });
+
+    const runner = new SpecKitRunner(tmp);
+    await expect(runner.runSpec("F-001", "Task CRUD", [])).rejects.toThrow(/claude CLI failed/);
+  });
+
+  it("throws when claude --print returns empty output", async () => {
+    // claude --version succeeds
+    mockSpawnSync.mockReturnValueOnce({ status: 0, stdout: "claude 1.0.0", stderr: "" });
+    // claude --print returns empty
+    mockSpawnSync.mockReturnValueOnce({ status: 0, stdout: "", stderr: "" });
+
+    const runner = new SpecKitRunner(tmp);
+    await expect(runner.runSpec("F-001", "Task CRUD", [])).rejects.toThrow(/empty response/);
+  });
+
+  it("runs all phases (spec→plan→tasks→implement) via CLI and writes files", async () => {
+    const specResponse = "# Feature Specification: Task CRUD\n\nUsers can create and manage tasks.";
+    const planResponse = "# Implementation Plan: Task CRUD\n\n## Summary\nBuild CRUD operations.";
+    const tasksResponse = "# Tasks: Task CRUD\n\n- [ ] T001 Create src/features/f-001/index.ts";
+    const implementResponse = `Here is the implementation:
+
+<<<FILE: src/features/f-001/index.ts>>>
+export interface Task { id: string; title: string; }
+export function createTask(title: string): Task { return { id: Date.now().toString(), title }; }
+<<<END_FILE>>>`;
+
+    setupCliMock([specResponse, planResponse, tasksResponse, implementResponse]);
+
+    const runner = new SpecKitRunner(tmp);
+    const result = await runner.runPhases("F-001", "Task CRUD", ["Must support CRUD"], "spec");
+
+    expect(result.success).toBe(true);
+    expect(existsSync(join(tmp, "docs", "specs", "f-001", "spec.md"))).toBe(true);
+    expect(existsSync(join(tmp, "docs", "specs", "f-001", "plan.md"))).toBe(true);
+    expect(existsSync(join(tmp, "docs", "specs", "f-001", "tasks.md"))).toBe(true);
+    expect(existsSync(join(tmp, "src", "features", "f-001", "index.ts"))).toBe(true);
   });
 });
