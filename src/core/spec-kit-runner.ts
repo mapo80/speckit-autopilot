@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { join, dirname } from "path";
-import { spawnSync } from "child_process";
+import { spawnSync, spawn } from "child_process";
 import type { Phase } from "./state-store.js";
 import { copyBundledTemplate } from "../cli/bootstrap-product.js";
 
@@ -463,26 +463,47 @@ export class SpecKitRunner {
   }
 
   private callClaudeCli(prompt: string): Promise<string> {
-    // Pipe prompt via stdin — avoids shell-escaping issues with large prompts.
-    // Use augmented PATH so claude is found regardless of login shell config.
-    // --dangerously-skip-permissions: we drive all file writes ourselves; we
-    //   only want Claude to generate text, not ask for tool-use permissions.
+    // Use async spawn so large responses don't hit spawnSync's blocking timeout.
+    // Pipe prompt via stdin to avoid shell-escaping issues with large prompts.
     const env = { ...process.env, PATH: augmentedPath() };
-    const result = spawnSync(this.claudePath, ["--print", "--dangerously-skip-permissions"], {
-      input: prompt,
-      encoding: "utf8",
-      shell: false,
-      env,
-      timeout: 300_000, // 5 min per phase
-      cwd: this.root,
+    return new Promise((resolve, reject) => {
+      const proc = spawn(this.claudePath, ["--print", "--dangerously-skip-permissions"], {
+        shell: false,
+        env,
+        cwd: this.root,
+      });
+
+      proc.stdin.write(prompt);
+      proc.stdin.end();
+
+      let stdout = "";
+      let stderr = "";
+
+      proc.stdout.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });
+      proc.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
+
+      // Hard ceiling: 25 minutes per phase
+      const timer = setTimeout(() => {
+        proc.kill();
+        reject(new Error("claude CLI timed out after 25 minutes"));
+      }, 1_500_000);
+
+      proc.on("close", (code: number | null) => {
+        clearTimeout(timer);
+        if (code !== 0) {
+          reject(new Error(`claude CLI failed (exit ${code}): ${stderr.slice(0, 500)}`));
+        } else if (!stdout.trim()) {
+          reject(new Error(`claude CLI returned empty response (stderr: ${stderr.slice(0, 300)})`));
+        } else {
+          resolve(stdout.trim());
+        }
+      });
+
+      proc.on("error", (err: Error) => {
+        clearTimeout(timer);
+        reject(new Error(`claude CLI error: ${err.message}`));
+      });
     });
-    if (result.status !== 0 || result.error) {
-      const msg = result.stderr ?? result.error?.message ?? "unknown error";
-      throw new Error(`claude CLI failed (exit ${result.status}): ${msg.slice(0, 500)}`);
-    }
-    const output = (result.stdout ?? "").trim();
-    if (!output) throw new Error("claude CLI returned empty response");
-    return Promise.resolve(output);
   }
 
   // Phase: spec
@@ -540,8 +561,13 @@ export class SpecKitRunner {
   // Phase: implement
   async runImplement(featureId: string, featureTitle: string): Promise<string[]> {
     const specsDir = this.specsDir(featureId);
-    const specContent = readArtifact(join(specsDir, "spec.md")) ?? `Feature: ${featureTitle}`;
-    const planContent = readArtifact(join(specsDir, "plan.md")) ?? `Plan for: ${featureTitle}`;
+    // Truncate large artifacts to avoid exceeding claude CLI prompt limits.
+    // Keep the most actionable content: full tasks list (usually short) +
+    // first 150 lines of spec + first 100 lines of plan.
+    const truncate = (s: string, lines: number) =>
+      s.split("\n").slice(0, lines).join("\n");
+    const specContent = truncate(readArtifact(join(specsDir, "spec.md")) ?? `Feature: ${featureTitle}`, 150);
+    const planContent = truncate(readArtifact(join(specsDir, "plan.md")) ?? `Plan for: ${featureTitle}`, 100);
     const tasksContent = readArtifact(join(specsDir, "tasks.md")) ?? `Tasks for: ${featureTitle}`;
 
     const commandContent =
