@@ -6,6 +6,7 @@ import { makeEmptyBacklog, Backlog, Feature, featureNextId } from "../core/backl
 import { StateStore } from "../core/state-store.js";
 import { generateRoadmap, renderRoadmapMarkdown } from "../core/roadmap-generator.js";
 import { spawnSync } from "child_process";
+import { auditBootstrap } from "./audit.js";
 
 // ---------------------------------------------------------------------------
 // Spec Kit detection
@@ -334,6 +335,9 @@ export async function bootstrapProduct(root: string): Promise<BootstrapResult> {
   }
 
   const statePath = join(root, "docs", "autopilot-state.json");
+
+  // Informational audit — validates backlog consistency, never throws
+  try { auditBootstrap(root); } catch { /* best-effort */ }
 
   const notes: string[] = [];
   if (!specKitAvailable) {

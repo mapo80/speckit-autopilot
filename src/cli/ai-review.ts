@@ -61,7 +61,7 @@ function groupFeaturesByDomain(features: { id: string; title: string; status: st
   return groups;
 }
 
-async function callClaudeForReview(prompt: string): Promise<string> {
+export async function callClaudeForReview(prompt: string): Promise<string> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
 
   if (apiKey) {

@@ -21,20 +21,21 @@ const specFile = specIndex !== -1 ? resolve(args[specIndex + 1]) : null;
 const featureIndex = args.indexOf('--feature');
 const featureTarget = featureIndex !== -1 ? args[featureIndex + 1] : undefined;
 
-const COMMANDS = ['generate', 'bootstrap', 'ship', 'ship-feature', 'all', 'coverage-report', 'ai-review', 'status'];
+const COMMANDS = ['generate', 'bootstrap', 'ship', 'ship-feature', 'all', 'audit', 'coverage-report', 'ai-review', 'status'];
 
 if (!command || command === '--help' || command === '-h') {
   console.log(`
 speckit-autopilot runner
 
 Commands:
-  generate         Read any spec file and write docs/product.md (requires --spec)
+  generate         Read any spec file and write docs/product.md, then validate it (requires --spec)
   bootstrap        Parse docs/product.md and create backlog + roadmap + state
   ship             Implement all open features one by one (auto-resumes after interruption)
   ship-feature     Implement a single feature (--feature F-001 or next open)
   all              generate (if --spec) + bootstrap + ship in sequence
-  coverage-report  Generate docs/coverage-report.md — structural gaps + file counts per feature
-  ai-review        Generate docs/ai-review-report.md — AI analysis of implementation vs spec
+  audit            Full quality audit: validate product.md + backlog + AI review per feature → docs/audit-report.md
+  coverage-report  Generate docs/coverage-report.md — structural gaps + file counts (deprecated: use audit)
+  ai-review        Generate docs/ai-review-report.md — AI analysis vs original spec (deprecated: use audit)
   status           Print current phase, backlog summary, and recent log
 
 Options:
@@ -190,6 +191,15 @@ ${specContent}`;
   mkdirSync(join(projectRoot, 'docs'), { recursive: true });
   writeFileSync(productMdPath, output, 'utf8');
 
+  // Validate the generated product.md immediately
+  const { auditGenerate } = await import('./dist/cli/audit.js');
+  const auditResult = auditGenerate(projectRoot);
+  if (auditResult.warnings.length > 0) {
+    console.warn(`  AUDIT WARNINGS: ${auditResult.warnings.join('; ')}`);
+  } else {
+    console.log(`  Audit: product.md valid (${auditResult.featureCount} features, no warnings)`);
+  }
+
   // Count extracted features
   const featureCount = (output.match(/^### Feature \d+/gm) ?? []).length;
   console.log(`  Written: ${productMdPath}`);
@@ -247,6 +257,12 @@ try {
   if (command === 'status') {
     const { printStatus } = await import('./dist/cli/status.js');
     printStatus(root);
+  }
+
+  if (command === 'audit') {
+    console.log('--- AUDIT ---');
+    const { auditAll } = await import('./dist/cli/audit.js');
+    await auditAll(root);
   }
 
   if (command === 'coverage-report') {

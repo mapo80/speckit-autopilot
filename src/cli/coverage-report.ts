@@ -18,7 +18,7 @@ interface ImplementationReport {
   coverage: number | null;
 }
 
-interface StructuralGap {
+export interface StructuralGap {
   path: string;
   reason: string;
   critical: boolean;
@@ -61,7 +61,7 @@ function readImplementationReport(root: string, featureId: string): Implementati
   }
 }
 
-function scanGeneratedFiles(root: string): string[] {
+export function scanGeneratedFiles(root: string): string[] {
   // Use git ls-files to get tracked + untracked files, excluding docs/ and node_modules
   const result = spawnSync("git", ["ls-files", "--others", "--cached", "--exclude-standard"], {
     cwd: root,
@@ -100,7 +100,7 @@ function collectFiles(dir: string, root: string, acc: string[]): void {
   }
 }
 
-function detectStructuralGaps(root: string, techStack: string): StructuralGap[] {
+export function detectStructuralGaps(root: string, techStack: string): StructuralGap[] {
   const gaps: StructuralGap[] = [];
   const hasDotNet = /\.NET|C#|csharp/i.test(techStack);
   const hasFlutter = /Flutter|Dart/i.test(techStack);

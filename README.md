@@ -12,8 +12,7 @@ to autonomously ship full products and individual features, one spec at a time.
 - **Compaction-safe** – survives `/compact`, session restarts, and IDE reboots via file-based state
 - **Spec Kit integration** – drives the full `/speckit.*` workflow per feature
 - **Acceptance gating** – blocks completion if lint, tests, or coverage do not pass
-- **Coverage report** – static gap analysis: missing project files, task counts, file counts per feature
-- **AI review** – semantic review of each feature against the original spec using Claude
+- **Unified audit** – built-in QA loop at every stage: validate product.md, validate backlog, AI review per feature
 
 ## Requirements
 
@@ -31,12 +30,13 @@ cd speckit-autopilot
 npm install
 npm run build
 
-# Install skills globally for Claude Code
+# Install skills globally for Claude Code + create speckit-autopilot binary
 bash install.sh
 ```
 
-The `install.sh` script copies the skill definitions into `~/.claude/skills/speckit-autopilot/`
-so they are available in every Claude Code session.
+The `install.sh` script:
+- copies skill definitions into `~/.claude/skills/`
+- creates `~/.local/bin/speckit-autopilot` wrapper (add `~/.local/bin` to `PATH`)
 
 Restart Claude Code (or open a new session) after running the script.
 
@@ -47,69 +47,77 @@ Restart Claude Code (or open a new session) after running the script.
 ### Greenfield — new product from spec
 
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│                     GREENFIELD WORKFLOW                          │
-└──────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                        GREENFIELD WORKFLOW                           │
+└──────────────────────────────────────────────────────────────────────┘
 
-  Your spec file (any format)
+  Your spec file (any format: .md, .txt, .pdf text)
          │
          ▼
-  ┌─────────────────┐
-  │  node run.mjs   │  or  /generate-product --spec ./my-spec.md
-  │    generate     │
-  └────────┬────────┘
-           │  writes docs/product.md
-           ▼
-  ┌─────────────────┐
-  │  node run.mjs   │  or  /bootstrap-product
-  │   bootstrap     │
-  └────────┬────────┘
-           │  writes docs/product-backlog.yaml
-           │          docs/roadmap.md
-           │          docs/autopilot-state.json
-           ▼
-  ┌─────────────────┐
-  │  node run.mjs   │  or  /ship-product
-  │      ship       │
-  └────────┬────────┘
-           │
-           │  ┌─────────────────────────────────────────────────┐
-           │  │  For each open feature (dependency order):      │
-           │  │                                                  │
-           │  │   spec → clarify → plan → tasks → analyze       │
-           │  │                                    │             │
-           │  │                               implement          │
-           │  │                                    │             │
-           │  │                              QA gate             │
-           │  │                         (lint / tests / cov)     │
-           │  │                                    │             │
-           │  │                    pass ◄──────────┴──────► fail │
-           │  │                      │                      │    │
-           │  │                  mark done              retry (3x)│
-           │  │                      │                  then block│
-           │  └──────────────────────┘                           │
-           │                                                      │
-           ▼                                                      │
-  All features done  ◄─────────────────────────────────────────── ┘
-           │
-           ▼
-  ┌─────────────────┐
-  │  node run.mjs   │  Verify completeness
-  │ coverage-report │
-  └────────┬────────┘
-           │  writes docs/coverage-report.md
-           │  (structural gaps, task counts, file counts)
-           ▼
-  ┌─────────────────┐
-  │  node run.mjs   │  Semantic gap analysis vs original spec
-  │   ai-review     │
-  └────────┬────────┘
-           │  writes docs/ai-review-report.md
-           ▼
+  ┌──────────────────────┐
+  │  generate            │  node run.mjs generate --spec ./spec.md
+  └──────────┬───────────┘
+             │  writes docs/product.md
+             │  ┌─────────────────────────────────────────────┐
+             │  │ AUDIT [static]: validate product.md         │
+             │  │  - Feature count >= 5?                      │
+             │  │  - Each feature has acceptance criteria?    │
+             │  │  - Delivery Preference section present?     │
+             │  └─────────────────────────────────────────────┘
+             ▼
+  ┌──────────────────────┐
+  │  bootstrap           │  node run.mjs bootstrap
+  └──────────┬───────────┘
+             │  writes docs/product-backlog.yaml
+             │          docs/roadmap.md
+             │          docs/autopilot-state.json
+             │  ┌─────────────────────────────────────────────┐
+             │  │ AUDIT [static]: validate backlog            │
+             │  │  - Feature count matches product.md?        │
+             │  │  - All features have acceptanceCriteria?    │
+             │  │  - autopilot-state.json created?            │
+             │  └─────────────────────────────────────────────┘
+             ▼
+  ┌──────────────────────┐
+  │  ship                │  node run.mjs ship
+  └──────────┬───────────┘
+             │
+             │  ┌──────────────────────────────────────────────────────┐
+             │  │  For each open feature (dependency order):           │
+             │  │                                                      │
+             │  │   spec → clarify → plan → tasks → analyze           │
+             │  │                                  │                  │
+             │  │                             implement               │
+             │  │                                  │                  │
+             │  │                            QA gate                  │
+             │  │                     (lint / tests / cov)            │
+             │  │                                  │                  │
+             │  │                  pass ◄──────────┴──────► fail      │
+             │  │                    │                      │         │
+             │  │                mark done           retry (3x)       │
+             │  │                    │               then block       │
+             │  │                    │                                │
+             │  │      ┌─────────────────────────────────────────┐   │
+             │  │      │ AUDIT [AI]: per-feature review           │   │
+             │  │      │  - spec.md vs implementation files       │   │
+             │  │      │  - 1 Claude call → docs/specs/{id}/      │   │
+             │  │      │    audit.md (informational, non-blocking)│   │
+             │  │      └─────────────────────────────────────────┘   │
+             │  └────────────────────────────────────────────────────┘
+             ▼
+  All features done
+             │
+             ▼
+  ┌──────────────────────┐
+  │  audit               │  node run.mjs audit   (optional standalone)
+  └──────────┬───────────┘
+             │  writes docs/audit-report.md
+             │          docs/specs/{id}/audit.md  (per feature)
+             ▼
   Review & iterate
 ```
 
-**Shortcut — run all three setup steps in one command:**
+**Shortcut — run generate + bootstrap + ship in one command:**
 ```bash
 node run.mjs all --root /path/to/project --spec /path/to/spec.md
 ```
@@ -120,14 +128,14 @@ node run.mjs all --root /path/to/project --spec /path/to/spec.md
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│                    BROWNFIELD WORKFLOW                           │
+│                      BROWNFIELD WORKFLOW                         │
 └──────────────────────────────────────────────────────────────────┘
 
   Existing codebase (src/ + deps already present)
          │
          ▼
   ┌──────────────────────────────┐
-  │  /ship-feature "feature name"│  or  node run.mjs ship --root .
+  │  ship-feature [F-ID]         │  node run.mjs ship-feature --feature F-003
   └──────────────┬───────────────┘
                  │
                  ▼
@@ -135,14 +143,6 @@ node run.mjs all --root /path/to/project --spec /path/to/spec.md
   │  Detect brownfield           │
   │  (checks src/, package.json, │
   │   .csproj, pubspec.yaml …)   │
-  └──────────────┬───────────────┘
-                 │
-                 ▼
-  ┌──────────────────────────────┐
-  │  Build brownfield snapshot   │
-  │  docs/brownfield-snapshot.md │
-  │  (tech stack, entry points,  │
-  │   conventions, test setup)   │
   └──────────────┬───────────────┘
                  │
                  ▼
@@ -162,8 +162,47 @@ node run.mjs all --root /path/to/project --spec /path/to/spec.md
                         │
                         ▼
                    feature done
-                   (backlog updated)
+                        │
+              ┌─────────────────────────────────┐
+              │ AUDIT [AI]: feature review       │
+              │  - spec.md vs implementation     │
+              │  - writes docs/specs/{id}/       │
+              │    audit.md (informational)      │
+              └─────────────────────────────────┘
 ```
+
+---
+
+### Quality Assurance Loop
+
+The audit runs automatically at every stage — no manual invocation needed during normal operation.
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                       QUALITY ASSURANCE LOOP                        │
+└─────────────────────────────────────────────────────────────────────┘
+
+  generate ──► [AUDIT static] product.md validation
+                 - feature count, criteria presence, delivery order
+
+  bootstrap ──► [AUDIT static] backlog consistency
+                 - count match vs product.md, empty criteria check
+
+  ship/ship-feature (per feature)
+     ──► implement
+     ──► QA gate (lint + tests + coverage)  ← BLOCKS on failure
+     ──► [AUDIT AI] spec.md → file list     ← informational only
+           writes docs/specs/{id}/audit.md
+
+  audit (standalone)
+     ──► re-run all static checks
+     ──► structural gap detection (.sln, .csproj, pubspec.yaml, package.json)
+     ──► AI review for each "done" feature
+     ──► writes docs/audit-report.md (incrementally, interrupt-safe)
+```
+
+The AI audit is **informational**: it never blocks the gate and never increments the failure counter.
+One Claude call per feature; for 19 features that adds ~20-40 min to `audit` standalone.
 
 ---
 
@@ -179,17 +218,21 @@ node run.mjs all --root /path/to/project --spec /path/to/spec.md
 | `/ship-feature [target]` | Ship one feature (greenfield or brownfield) |
 | `/resume-loop` | Resume after `/compact` or session restart |
 | `/status` | Show current phase, backlog summary, last error |
+| `/audit` | Full quality audit → `docs/audit-report.md` |
 
-### CLI commands (`node run.mjs`)
+### CLI commands (`node run.mjs` / `speckit-autopilot`)
 
 | Command | Description | Key options |
 |---------|-------------|-------------|
-| `generate` | Read spec → `docs/product.md` | `--spec <path>` (required) |
-| `bootstrap` | Parse `docs/product.md` → backlog + state | — |
-| `ship` | Implement all open features | — |
+| `generate` | Read spec → `docs/product.md`, then audit product.md | `--spec <path>` (required) |
+| `bootstrap` | Parse `docs/product.md` → backlog + state, then audit backlog | — |
+| `ship` | Implement all open features, audit each after completion | — |
+| `ship-feature` | Implement a single feature | `--feature F-001` (optional, picks next open if omitted) |
 | `all` | `generate` + `bootstrap` + `ship` in sequence | `--spec <path>` (required) |
-| `coverage-report` | Static gap analysis → `docs/coverage-report.md` | — |
-| `ai-review` | AI semantic review → `docs/ai-review-report.md` | `--spec <path>` (optional) |
+| `status` | Print current phase, backlog summary, recent log | — |
+| `audit` | Full QA audit → `docs/audit-report.md` + per-feature `audit.md` | — |
+| `coverage-report` | Static gap analysis → `docs/coverage-report.md` | *(deprecated — use `audit`)* |
+| `ai-review` | AI semantic review → `docs/ai-review-report.md` | *(deprecated — use `audit`)* |
 
 **Global option:** `--root <path>` — target project directory (default: current directory)
 
@@ -198,9 +241,15 @@ node run.mjs all --root /path/to/project --spec /path/to/spec.md
 node run.mjs generate        --root ./my-project --spec ./requirements.md
 node run.mjs bootstrap       --root ./my-project
 node run.mjs ship            --root ./my-project
+node run.mjs ship-feature    --root ./my-project --feature F-003
 node run.mjs all             --root ./my-project --spec ./requirements.md
-node run.mjs coverage-report --root ./my-project
-node run.mjs ai-review       --root ./my-project --spec ./requirements.md
+node run.mjs status          --root ./my-project
+node run.mjs audit           --root ./my-project
+
+# Or via the installed binary (same arguments)
+speckit-autopilot ship        --root ./my-project
+speckit-autopilot ship-feature --root ./my-project --feature F-003
+speckit-autopilot audit       --root ./my-project
 ```
 
 ---
@@ -240,7 +289,7 @@ All state is stored in the **target repo** (not the plugin directory):
 
 | File | Purpose |
 |------|---------|
-| `docs/product.md` | Input: product description |
+| `docs/product.md` | Input: product description + acceptance criteria |
 | `docs/tech-stack.md` | Input: language and framework hints |
 | `docs/roadmap.md` | Generated: ordered feature roadmap |
 | `docs/product-backlog.yaml` | Generated: machine-readable backlog |
@@ -251,8 +300,10 @@ All state is stored in the **target repo** (not the plugin directory):
 | `docs/specs/{id}/plan.md` | Generated per feature: implementation plan |
 | `docs/specs/{id}/tasks.md` | Generated per feature: task breakdown |
 | `docs/specs/{id}/implementation-report.json` | Generated per feature: files changed + QA results |
-| `docs/coverage-report.md` | Generated: structural gap analysis |
-| `docs/ai-review-report.md` | Generated: AI semantic review |
+| `docs/specs/{id}/audit.md` | Generated per feature: AI review vs spec (Score 1-5) |
+| `docs/audit-report.md` | Generated: full audit — generate + bootstrap + gaps + features |
+| `docs/coverage-report.md` | Generated: structural gap analysis *(legacy)* |
+| `docs/ai-review-report.md` | Generated: AI semantic review *(legacy)* |
 
 ---
 
@@ -310,12 +361,15 @@ speckit-autopilot/
 ├── examples/
 │   └── simple-demo/         # Example product with expected artifacts
 ├── skills/                  # Skill definitions (source — copied by install.sh)
+│   ├── audit.md
 │   ├── bootstrap-product.md
 │   ├── generate-product.md
 │   ├── ship-product.md
 │   ├── ship-feature.md
 │   ├── resume-loop.md
-│   └── status.md
+│   ├── status.md
+│   ├── coverage-report.md   # deprecated
+│   └── ai-review.md         # deprecated
 ├── src/
 │   ├── core/                # Business logic
 │   │   ├── spec-kit-runner.ts   # SpecKitRunner, readTechStack
@@ -328,12 +382,18 @@ speckit-autopilot/
 │       ├── ship-product.ts      # full product ship loop
 │       ├── ship-feature.ts      # single feature ship
 │       ├── bootstrap-product.ts # backlog + state init
-│       ├── coverage-report.ts   # static gap analysis
-│       └── ai-review.ts         # AI semantic review
+│       ├── audit.ts             # unified audit (generate + bootstrap + feature AI review)
+│       ├── status.ts            # status printer
+│       ├── coverage-report.ts   # static gap analysis (legacy)
+│       └── ai-review.ts         # AI semantic review (legacy)
 ├── tests/
 │   ├── unit/
+│   │   ├── audit.test.ts        # auditGenerate + auditBootstrap unit tests
+│   │   └── ...
 │   └── integration/
-├── install.sh               # Installs skills into ~/.claude/skills/
+│       ├── audit-feature.test.ts  # auditFeature with injectable callClaude
+│       └── ...
+├── install.sh               # Installs skills + creates ~/.local/bin/speckit-autopilot
 ├── run.mjs                  # CLI entry point
 ├── CHANGELOG.md
 ├── CLAUDE.md                # Operational rules

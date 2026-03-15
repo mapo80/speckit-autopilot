@@ -8,6 +8,7 @@ import { pickNextFeature } from "../core/feature-picker.js";
 import { appendToIterationLog } from "../core/compact-state.js";
 import { runAcceptanceGate, applyGateResultToState } from "../core/acceptance-gate.js";
 import { SpecKitRunner, ensureSpecKitInitialized, verifyImplementationProducedCode } from "../core/spec-kit-runner.js";
+import { auditFeature } from "./audit.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -362,6 +363,8 @@ export async function shipProduct(opts: ShipProductOptions): Promise<ShipProduct
         root,
         `\n## DONE – ${feature.id} "${feature.title}" – ${new Date().toISOString()}\n- Files: ${filesSummary}\n- QA: ${qaSummary || "dry-run"}\n- Coverage: ${state.lastCoverage ?? "n/a"}\n`
       );
+      // Informational audit — awaited to avoid concurrent Claude calls, but never blocks the gate
+      try { await auditFeature(root, feature.id, feature.title); } catch { /* best-effort */ }
     } else {
       appendToIterationLog(
         root,
