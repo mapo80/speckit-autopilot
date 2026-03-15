@@ -5,8 +5,8 @@ to autonomously ship full products and individual features, one spec at a time.
 
 ## Features
 
-- **Greenfield mode** – read any spec file, generate a backlog, and implement every feature iteratively
-- **Brownfield mode** – analyse an existing repo and implement a single targeted feature
+- **Unified workflow** – same commands for new projects and existing codebases; brownfield context detected automatically
+- **Full product or single feature** – spec can describe an entire product or a single feature requirement
 - **CLI runner** – drives all Claude calls via `claude --print`; no API key or SDK required
 - **Multi-language** – tech-stack aware: inject `.NET/C#`, `Flutter/Dart`, `React/TypeScript` or any stack via `docs/tech-stack.md`
 - **Compaction-safe** – survives `/compact`, session restarts, and IDE reboots via file-based state
@@ -42,16 +42,19 @@ Restart Claude Code (or open a new session) after running the script.
 
 ---
 
-## Workflows
+## Workflow
 
-### Greenfield — new product from spec
+The commands are identical whether you are starting a new project or adding to an existing codebase.
+speckit-autopilot detects the context automatically: if source code is found, it builds a codebase
+snapshot and uses it as context in all implementation phases.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│                        GREENFIELD WORKFLOW                           │
+│                           WORKFLOW                                   │
+│  (same commands for new projects and existing codebases)             │
 └──────────────────────────────────────────────────────────────────────┘
 
-  Your spec file (any format: .md, .txt, .pdf text)
+  Your spec file — full product OR single feature requirement
          │
          ▼
   ┌──────────────────────┐
@@ -77,6 +80,10 @@ Restart Claude Code (or open a new session) after running the script.
              │  writes docs/product-backlog.yaml
              │          docs/roadmap.md
              │          docs/autopilot-state.json
+             │          docs/tech-stack.md (detected from codebase if present,
+             │                              otherwise from product.md)
+             │  If source code exists:
+             │          docs/brownfield-snapshot.md (codebase analysis)
              │  ┌─────────────────────────────────────────────┐
              │  │ AUDIT [static]: validate backlog            │
              │  │  - Feature count matches product.md?        │
@@ -84,12 +91,17 @@ Restart Claude Code (or open a new session) after running the script.
              │  │  - autopilot-state.json created?            │
              │  └─────────────────────────────────────────────┘
              ▼
-  ┌──────────────────────┐
-  │  ship                │  node run.mjs ship
-  └──────────┬───────────┘
-             │
+  ┌──────────────────────┐         ┌────────────────────────────────┐
+  │  ship                │   OR    │  ship-feature --feature F-001  │
+  └──────────┬───────────┘         └────────────────┬───────────────┘
+             │                                      │
+             └─────────────────┬────────────────────┘
+                               │
              │  ┌──────────────────────────────────────────────────────┐
              │  │  For each open feature (dependency order):           │
+             │  │                                                      │
+             │  │  If docs/brownfield-snapshot.md exists:              │
+             │  │    → codebase context injected into every prompt     │
              │  │                                                      │
              │  │   spec → clarify → plan → tasks → analyze           │
              │  │                                  │                  │
@@ -126,55 +138,6 @@ Restart Claude Code (or open a new session) after running the script.
 **Shortcut — run generate + bootstrap + ship in one command:**
 ```bash
 node run.mjs all --root /path/to/project --spec /path/to/spec.md
-```
-
----
-
-### Brownfield — add a feature to an existing repo
-
-```
-┌──────────────────────────────────────────────────────────────────┐
-│                      BROWNFIELD WORKFLOW                         │
-└──────────────────────────────────────────────────────────────────┘
-
-  Existing codebase (src/ + deps already present)
-         │
-         ▼
-  ┌──────────────────────────────┐
-  │  ship-feature [F-ID]         │  node run.mjs ship-feature --feature F-003
-  └──────────────┬───────────────┘
-                 │
-                 ▼
-  ┌──────────────────────────────┐
-  │  Detect brownfield           │
-  │  (checks src/, package.json, │
-  │   .csproj, pubspec.yaml …)   │
-  └──────────────┬───────────────┘
-                 │
-                 ▼
-  ┌──────────────────────────────────────────────────────────┐
-  │  Spec Kit phases (scoped to this feature):               │
-  │                                                          │
-  │   spec → clarify → plan → tasks → analyze → implement   │
-  └──────────────────────────────┬───────────────────────────┘
-                                 │
-                                 ▼
-                         ┌──────────────┐
-                         │   QA gate    │
-                         │ lint / tests │
-                         │  / coverage  │
-                         └──────┬───────┘
-                      pass ◄────┴────► fail → error returned
-                        │
-                        ▼
-                   feature done
-                        │
-              ┌─────────────────────────────────┐
-              │ AUDIT [AI]: feature review       │
-              │  - spec.md vs implementation     │
-              │  - writes docs/specs/{id}/       │
-              │    audit.md (informational)      │
-              └─────────────────────────────────┘
 ```
 
 ---
@@ -222,7 +185,7 @@ One Claude call per feature; for 19 features that adds ~20-40 min to `audit` sta
 | `/generate-techstack` | Infer tech stack from `docs/product.md` → `docs/tech-stack.md` (backs up existing) |
 | `/bootstrap-product` | Parse `docs/product.md` → roadmap + backlog + state + tech-stack (if absent) |
 | `/ship-product` | Ship all open features iteratively |
-| `/ship-feature [target]` | Ship one feature (greenfield or brownfield) |
+| `/ship-feature [target]` | Ship one feature (codebase context injected automatically if source code exists) |
 | `/resume-loop` | Resume after `/compact` or session restart |
 | `/status` | Show current phase, backlog summary, last error |
 | `/audit` | Full quality audit → `docs/audit-report.md` |
@@ -235,7 +198,7 @@ One Claude call per feature; for 19 features that adds ~20-40 min to `audit` sta
 | `generate-techstack` | Infer tech stack from `docs/product.md` → `docs/tech-stack.md` (backs up existing) | — |
 | `bootstrap` | Parse `docs/product.md` → backlog + state + tech-stack (if absent), then audit backlog | — |
 | `ship` | Implement all open features, audit each after completion | — |
-| `ship-feature` | Implement a single feature | `--feature F-001` (optional, picks next open if omitted) |
+| `ship-feature` | Implement a single feature (codebase snapshot injected if source code exists) | `--feature F-001` (optional, picks next open if omitted) |
 | `all` | `generate` + `bootstrap` + `ship` in sequence | `--spec <path>` (required) |
 | `status` | Print current phase, backlog summary, recent log | — |
 | `audit` | Full QA audit → `docs/audit-report.md` + per-feature `audit.md` | — |

@@ -1,7 +1,8 @@
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync, readFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { generateTechStack } from "../../src/cli/generate-techstack.js";
+import { generateTechStack, generateTechStackFromSnapshot } from "../../src/cli/generate-techstack.js";
+import type { BrownfieldSnapshot } from "../../src/core/brownfield-snapshot.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -100,5 +101,75 @@ describe("generateTechStack", () => {
     await generateTechStack(root, async (prompt) => { capturedPrompt = prompt; return TECH_STACK_RESPONSE; });
     expect(capturedPrompt).toContain("PRODUCT SPECIFICATION");
     expect(capturedPrompt).toContain("My Product");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// generateTechStackFromSnapshot
+// ---------------------------------------------------------------------------
+
+const MOCK_SNAPSHOT: BrownfieldSnapshot = {
+  generatedAt: "2026-01-01T00:00:00.000Z",
+  featureTitle: "",
+  techStack: {
+    language: ["TypeScript", "JavaScript"],
+    frameworks: ["Express", "React"],
+    buildTools: ["Vite"],
+    runtime: "Node.js",
+  },
+  projectStructure: ["src/", "tests/"],
+  entryPoints: [{ file: "src/index.ts", purpose: "main" }],
+  testFramework: { name: "Jest", location: "tests/", coverageTool: "v8" },
+  conventions: [],
+  integrationPoints: [],
+  risks: [],
+};
+
+describe("generateTechStackFromSnapshot", () => {
+  const dirs: string[] = [];
+  afterEach(() => {
+    for (const d of dirs) rmSync(d, { recursive: true, force: true });
+    dirs.length = 0;
+  });
+
+  it("creates docs/tech-stack.md from brownfield snapshot", async () => {
+    const root = mkdtempSync(join(tmpdir(), "ts-snap-test-")); dirs.push(root);
+    mkdirSync(join(root, "docs"), { recursive: true });
+
+    const result = await generateTechStackFromSnapshot(root, async () => TECH_STACK_RESPONSE, MOCK_SNAPSHOT);
+    expect(result.created).toBe(true);
+    expect(existsSync(result.techStackPath)).toBe(true);
+  });
+
+  it("prompt includes detected languages from snapshot.techStack.language", async () => {
+    const root = mkdtempSync(join(tmpdir(), "ts-snap-test-")); dirs.push(root);
+    mkdirSync(join(root, "docs"), { recursive: true });
+
+    let capturedPrompt = "";
+    await generateTechStackFromSnapshot(root, async (p) => { capturedPrompt = p; return TECH_STACK_RESPONSE; }, MOCK_SNAPSHOT);
+    expect(capturedPrompt).toContain("TypeScript");
+    expect(capturedPrompt).toContain("JavaScript");
+  });
+
+  it("prompt includes detected frameworks from snapshot.techStack.frameworks", async () => {
+    const root = mkdtempSync(join(tmpdir(), "ts-snap-test-")); dirs.push(root);
+    mkdirSync(join(root, "docs"), { recursive: true });
+
+    let capturedPrompt = "";
+    await generateTechStackFromSnapshot(root, async (p) => { capturedPrompt = p; return TECH_STACK_RESPONSE; }, MOCK_SNAPSHOT);
+    expect(capturedPrompt).toContain("Express");
+    expect(capturedPrompt).toContain("React");
+  });
+
+  it("skips when docs/tech-stack.md already exists", async () => {
+    const root = mkdtempSync(join(tmpdir(), "ts-snap-test-")); dirs.push(root);
+    mkdirSync(join(root, "docs"), { recursive: true });
+    writeFileSync(join(root, "docs", "tech-stack.md"), "# Existing\n", "utf8");
+
+    let called = false;
+    const result = await generateTechStackFromSnapshot(root, async () => { called = true; return TECH_STACK_RESPONSE; }, MOCK_SNAPSHOT);
+    expect(result.created).toBe(false);
+    expect(called).toBe(false);
+    expect(readFileSync(join(root, "docs", "tech-stack.md"), "utf8")).toBe("# Existing\n");
   });
 });

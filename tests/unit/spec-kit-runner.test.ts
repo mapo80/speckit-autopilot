@@ -463,3 +463,104 @@ describe("verifyImplementationProducedCode git-diff path", () => {
     expect(typeof result.hasNewFiles).toBe("boolean");
   });
 });
+
+// ---------------------------------------------------------------------------
+// SpecKitRunner — brownfield snapshot injected into prompts
+// ---------------------------------------------------------------------------
+
+describe("spec/plan/tasks prompts — codebase snapshot context", () => {
+  let tmp: string;
+
+  beforeEach(() => {
+    tmp = makeTmp();
+    mkdirSync(join(tmp, "docs"), { recursive: true });
+    writeFileSync(join(tmp, "docs", "tech-stack.md"), "# Tech Stack\n\n## Backend\n- Language / Runtime: TypeScript\n", "utf8");
+  });
+  afterEach(() => rmSync(tmp, { recursive: true, force: true }));
+
+  it("buildSpecPrompt includes CODEBASE CONTEXT when brownfield-snapshot.md present", async () => {
+    writeFileSync(
+      join(tmp, "docs", "brownfield-snapshot.md"),
+      "# Brownfield Snapshot\n\nExisting modules: AuthService, UserRepository\n",
+      "utf8"
+    );
+
+    let capturedPrompt = "";
+    try {
+      const runner = new SpecKitRunner(tmp);
+      runner.callClaude = async (prompt) => { capturedPrompt = prompt; return "# Feature Specification: Test\n"; };
+      await runner.runSpec("F-001", "Test Feature", []);
+    } catch (err) {
+      if ((err as Error).message.includes("claude CLI")) return; // skip if claude not installed
+      throw err;
+    }
+
+    expect(capturedPrompt).toContain("CODEBASE CONTEXT");
+    expect(capturedPrompt).toContain("AuthService");
+  });
+
+  it("buildPlanPrompt includes CODEBASE CONTEXT when snapshot present", async () => {
+    writeFileSync(
+      join(tmp, "docs", "brownfield-snapshot.md"),
+      "# Brownfield Snapshot\n\nExisting modules: PaymentGateway\n",
+      "utf8"
+    );
+    const specsDir = join(tmp, "docs", "specs", "f-001");
+    mkdirSync(specsDir, { recursive: true });
+    writeFileSync(join(specsDir, "spec.md"), "# Spec", "utf8");
+
+    let capturedPrompt = "";
+    try {
+      const runner = new SpecKitRunner(tmp);
+      runner.callClaude = async (prompt) => { capturedPrompt = prompt; return "# Implementation Plan: Test\n"; };
+      await runner.runPlan("F-001", "Test Feature");
+    } catch (err) {
+      if ((err as Error).message.includes("claude CLI")) return;
+      throw err;
+    }
+
+    expect(capturedPrompt).toContain("CODEBASE CONTEXT");
+    expect(capturedPrompt).toContain("PaymentGateway");
+  });
+
+  it("buildTasksPrompt includes CODEBASE CONTEXT when snapshot present", async () => {
+    writeFileSync(
+      join(tmp, "docs", "brownfield-snapshot.md"),
+      "# Brownfield Snapshot\n\nExisting modules: OrderService\n",
+      "utf8"
+    );
+    const specsDir = join(tmp, "docs", "specs", "f-001");
+    mkdirSync(specsDir, { recursive: true });
+    writeFileSync(join(specsDir, "spec.md"), "# Spec", "utf8");
+    writeFileSync(join(specsDir, "plan.md"), "# Plan", "utf8");
+
+    let capturedPrompt = "";
+    try {
+      const runner = new SpecKitRunner(tmp);
+      runner.callClaude = async (prompt) => { capturedPrompt = prompt; return "# Tasks: Test\n- [ ] T001 task\n"; };
+      await runner.runTasks("F-001", "Test Feature");
+    } catch (err) {
+      if ((err as Error).message.includes("claude CLI")) return;
+      throw err;
+    }
+
+    expect(capturedPrompt).toContain("CODEBASE CONTEXT");
+    expect(capturedPrompt).toContain("OrderService");
+  });
+
+  it("prompts omit CODEBASE CONTEXT when snapshot absent", async () => {
+    // No brownfield-snapshot.md written
+
+    let capturedPrompt = "";
+    try {
+      const runner = new SpecKitRunner(tmp);
+      runner.callClaude = async (prompt) => { capturedPrompt = prompt; return "# Feature Specification: Test\n"; };
+      await runner.runSpec("F-001", "Test Feature", []);
+    } catch (err) {
+      if ((err as Error).message.includes("claude CLI")) return;
+      throw err;
+    }
+
+    expect(capturedPrompt).not.toContain("CODEBASE CONTEXT");
+  });
+});

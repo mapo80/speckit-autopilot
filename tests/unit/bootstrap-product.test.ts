@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync } from "fs";
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync, readFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import {
@@ -288,5 +288,78 @@ describe("scaffoldSpeckitDirs", () => {
   it("is idempotent (calling twice does not throw)", () => {
     scaffoldSpeckitDirs(tmp);
     expect(() => scaffoldSpeckitDirs(tmp)).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// bootstrapProduct — brownfield auto-detection
+// ---------------------------------------------------------------------------
+
+const SAMPLE_PRODUCT_MD_BROWNFIELD = `# My Product
+
+## Vision
+A simple product.
+
+## Tech Stack
+
+### Backend
+- Language / Runtime: TypeScript
+
+## In Scope
+### Feature 1 - Core: Do the thing
+- Does the thing
+
+## Out of Scope
+- Nothing
+
+## Delivery Preference
+1. Feature 1 - Core: Do the thing
+`;
+
+const mockCallClaude = async () => "# Tech Stack\n\n## Backend\n- Language / Runtime: TypeScript\n";
+
+describe("bootstrapProduct — brownfield auto-detection", () => {
+  const dirs: string[] = [];
+  afterEach(() => {
+    for (const d of dirs) rmSync(d, { recursive: true, force: true });
+    dirs.length = 0;
+  });
+
+  it("writes brownfield-snapshot.md when src/ + package.json are present", async () => {
+    const root = mkdtempSync(join(tmpdir(), "bs-brownfield-")); dirs.push(root);
+    mkdirSync(join(root, "docs"), { recursive: true });
+    mkdirSync(join(root, "src"), { recursive: true });
+    writeFileSync(join(root, "src", "index.ts"), "export {};", "utf8");
+    writeFileSync(join(root, "package.json"), JSON.stringify({ name: "app", dependencies: { express: "^4" } }), "utf8");
+    writeFileSync(join(root, "docs", "product.md"), SAMPLE_PRODUCT_MD_BROWNFIELD, "utf8");
+
+    await bootstrapProduct(root, mockCallClaude);
+
+    expect(existsSync(join(root, "docs", "brownfield-snapshot.md"))).toBe(true);
+  });
+
+  it("does not write brownfield-snapshot.md when no existing code", async () => {
+    const root = mkdtempSync(join(tmpdir(), "bs-greenfield-")); dirs.push(root);
+    mkdirSync(join(root, "docs"), { recursive: true });
+    writeFileSync(join(root, "docs", "product.md"), SAMPLE_PRODUCT_MD_BROWNFIELD, "utf8");
+
+    await bootstrapProduct(root, mockCallClaude);
+
+    expect(existsSync(join(root, "docs", "brownfield-snapshot.md"))).toBe(false);
+  });
+
+  it("skips tech-stack generation when docs/tech-stack.md already exists", async () => {
+    const root = mkdtempSync(join(tmpdir(), "bs-existing-ts-")); dirs.push(root);
+    mkdirSync(join(root, "docs"), { recursive: true });
+    writeFileSync(join(root, "docs", "product.md"), SAMPLE_PRODUCT_MD_BROWNFIELD, "utf8");
+    writeFileSync(join(root, "docs", "tech-stack.md"), "# Existing\n", "utf8");
+
+    let called = false;
+    await bootstrapProduct(root, async () => { called = true; return "# Tech Stack\n"; });
+
+    expect(called).toBe(false);
+    expect(existsSync(join(root, "docs", "tech-stack.md"))).toBe(true);
+    const content = readFileSync(join(root, "docs", "tech-stack.md"), "utf8");
+    expect(content).toBe("# Existing\n");
   });
 });

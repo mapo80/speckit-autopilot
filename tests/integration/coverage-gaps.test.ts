@@ -194,7 +194,7 @@ describe("shipFeature – QA gate failure (non-dry-run)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// ship-feature: greenfield without backlog (line 67 – calls bootstrapProduct)
+// ship-feature: backlog required (replaced runStandaloneFeature / bootstrapProduct auto-call)
 // ---------------------------------------------------------------------------
 
 describe("shipFeature – greenfield without backlog", () => {
@@ -202,28 +202,16 @@ describe("shipFeature – greenfield without backlog", () => {
   beforeEach(() => { tmp = makeTmp(); });
   afterEach(() => rmSync(tmp, { recursive: true, force: true }));
 
-  it("bootstraps and ships when product.md exists but no backlog", async () => {
+  it("returns error with clear message when backlog is missing", async () => {
     mkdirSync(join(tmp, "docs"), { recursive: true });
-    // Pre-create tech-stack.md so bootstrap skips the Claude call
     writeFileSync(join(tmp, "docs", "tech-stack.md"), "# Tech Stack\n\n## Backend\n- Language / Runtime: TypeScript\n", "utf8");
-    const productMd = [
-      "# Test Product",
-      "",
-      "## In Scope",
-      "### Feature 1 - Core",
-      "- Creates core functionality",
-      "",
-      "## Delivery Preference",
-      "1. Core",
-    ].join("\n");
-    writeFileSync(join(tmp, "docs", "product.md"), productMd, "utf8");
 
-    // No backlog, no state, no src/ → greenfield
+    // No backlog → must return error, not auto-bootstrap
     const result = await shipFeature({ root: tmp, dryRun: true });
-    // Bootstrap should have run and created the backlog
-    expect(existsSync(join(tmp, "docs", "product-backlog.yaml"))).toBe(true);
-    // shipFeature should have proceeded
-    expect(result.featureId).not.toBe("");
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("product-backlog.yaml not found");
+    expect(result.error).toContain("generate");
+    expect(result.error).toContain("bootstrap");
   });
 });
 
@@ -231,22 +219,22 @@ describe("shipFeature – greenfield without backlog", () => {
 // ship-feature: standalone with dryRun:false writes snapshot (lines 228-229)
 // ---------------------------------------------------------------------------
 
-describe("shipFeature – standalone brownfield non-dry-run", () => {
+describe("shipFeature – brownfield non-dry-run (with backlog)", () => {
   let tmp: string;
   beforeEach(() => { tmp = makeTmp(); });
   afterEach(() => rmSync(tmp, { recursive: true, force: true }));
 
-  it("writes brownfield snapshot in non-dry-run standalone mode", async () => {
+  it("returns error when backlog is missing (no standalone fallback)", async () => {
     mkdirSync(join(tmp, "src"), { recursive: true });
     writeFileSync(join(tmp, "src", "index.ts"), "export {};", "utf8");
     const pkg = { name: "app", version: "1.0.0", dependencies: { express: "^4" }, devDependencies: { jest: "^29" } };
     writeFileSync(join(tmp, "package.json"), JSON.stringify(pkg), "utf8");
-    // No backlog → standalone path
+    // No backlog → must return error
 
     const noopRunner = async () => ({ success: true, phase: "implement" as const });
     const result = await shipFeature({ root: tmp, featureTarget: "New Feature", dryRun: false, phaseRunner: noopRunner });
-    expect(result.brownfieldSnapshotWritten).toBe(true);
-    expect(existsSync(join(tmp, "docs", "brownfield-snapshot.md"))).toBe(true);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("product-backlog.yaml not found");
   });
 });
 
@@ -613,17 +601,17 @@ describe("shipFeature – state file missing when backlog exists", () => {
 // ship-feature: standalone brownfield with failing phase runner (line 246)
 // ---------------------------------------------------------------------------
 
-describe("shipFeature – standalone brownfield phase failure (line 246)", () => {
+describe("shipFeature – missing backlog returns error (no standalone fallback)", () => {
   let tmp: string;
   beforeEach(() => { tmp = makeTmp(); });
   afterEach(() => rmSync(tmp, { recursive: true, force: true }));
 
-  it("returns failure when standalone phase runner fails", async () => {
+  it("returns error when backlog missing, regardless of codebase presence", async () => {
     mkdirSync(join(tmp, "src"), { recursive: true });
     writeFileSync(join(tmp, "src", "index.ts"), "export {};", "utf8");
     const pkg = { name: "app", version: "1.0.0", dependencies: { express: "^4" }, devDependencies: {} };
     writeFileSync(join(tmp, "package.json"), JSON.stringify(pkg), "utf8");
-    // No backlog → triggers runStandaloneFeature path
+    // No backlog → must return error
 
     const result = await shipFeature({
       root: tmp,
@@ -632,8 +620,9 @@ describe("shipFeature – standalone brownfield phase failure (line 246)", () =>
       dryRun: true,
     });
     expect(result.success).toBe(false);
-    expect(result.featureId).toBe("standalone");
-    expect(result.error).toBe("spec failed");
+    expect(result.error).toContain("product-backlog.yaml not found");
+    expect(result.error).toContain("generate");
+    expect(result.error).toContain("bootstrap");
   });
 });
 

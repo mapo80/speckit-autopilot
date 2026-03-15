@@ -125,12 +125,18 @@ export function readTechStack(root: string): string {
 // Prompt builders per phase
 // ---------------------------------------------------------------------------
 
+function buildSnapshotBlock(snapshotContent: string | null): string {
+  if (!snapshotContent) return "";
+  return `\nCODEBASE CONTEXT (existing code — integrate with this):\n${snapshotContent}\n`;
+}
+
 function buildSpecPrompt(
   _commandContent: string,
   featureTitle: string,
   acceptanceCriteria: string[],
   specTemplate: string | null,
-  techStack: string
+  techStack: string,
+  snapshotContent: string | null = null
 ): string {
   const criteriaBlock =
     acceptanceCriteria.length > 0
@@ -144,7 +150,7 @@ ${criteriaBlock}
 
 TECH STACK:
 ${techStack}
-
+${buildSnapshotBlock(snapshotContent)}
 SPEC TEMPLATE:
 ${specTemplate ?? "Use sections: User Scenarios, Requirements, Success Criteria"}
 
@@ -160,7 +166,8 @@ function buildPlanPrompt(
   featureTitle: string,
   specContent: string,
   planTemplate: string | null,
-  techStack: string
+  techStack: string,
+  snapshotContent: string | null = null
 ): string {
   return `You are an expert software architect. Output ONLY a Markdown plan document. Do NOT use any tools.
 
@@ -168,7 +175,7 @@ FEATURE: ${featureTitle}
 
 TECH STACK:
 ${techStack}
-
+${buildSnapshotBlock(snapshotContent)}
 SPECIFICATION:
 ${specContent}
 
@@ -188,7 +195,8 @@ function buildTasksPrompt(
   featureId: string,
   specContent: string,
   planContent: string,
-  techStack: string
+  techStack: string,
+  snapshotContent: string | null = null
 ): string {
   return `You are an expert software engineer. Output ONLY a Markdown task list. Do NOT use any tools.
 
@@ -197,7 +205,7 @@ FEATURE ID: ${featureId}
 
 TECH STACK:
 ${techStack}
-
+${buildSnapshotBlock(snapshotContent)}
 SPECIFICATION:
 ${specContent}
 
@@ -410,6 +418,7 @@ export class SpecKitRunner {
   private readonly root: string;
   private readonly claudePath: string = "claude";
   private readonly techStack: string;
+  private readonly snapshotContent: string | null;
 
   /**
    * Overridable Claude call — defaults to the CLI implementation.
@@ -431,6 +440,9 @@ export class SpecKitRunner {
     }
     this.callClaude = this.callClaudeCli.bind(this);
     this.techStack = readTechStack(root);
+    // Load brownfield snapshot if present — passed as context to all phase prompts
+    const snapshotPath = join(root, "docs", "brownfield-snapshot.md");
+    this.snapshotContent = existsSync(snapshotPath) ? readFileSync(snapshotPath, "utf8") : null;
   }
 
   /** Always "cli" — kept for compatibility with existing callers. */
@@ -493,7 +505,7 @@ export class SpecKitRunner {
       "Create a feature specification with User Scenarios, Requirements, and Success Criteria.";
     const specTemplate = readTemplateFile(this.root, "spec-template.md");
 
-    const prompt = buildSpecPrompt(commandContent, featureTitle, acceptanceCriteria, specTemplate, this.techStack);
+    const prompt = buildSpecPrompt(commandContent, featureTitle, acceptanceCriteria, specTemplate, this.techStack, this.snapshotContent);
     const response = await this.callClaude(prompt);
 
     const specsDir = this.specsDir(featureId);
@@ -512,7 +524,7 @@ export class SpecKitRunner {
       "Create an implementation plan with Technical Context and Project Structure.";
     const planTemplate = readTemplateFile(this.root, "plan-template.md");
 
-    const prompt = buildPlanPrompt(commandContent, featureTitle, specContent, planTemplate, this.techStack);
+    const prompt = buildPlanPrompt(commandContent, featureTitle, specContent, planTemplate, this.techStack, this.snapshotContent);
     const response = await this.callClaude(prompt);
 
     const planPath = join(specsDir, "plan.md");
@@ -530,7 +542,7 @@ export class SpecKitRunner {
       readCommandFile(this.root, "speckit.tasks") ??
       "Generate actionable tasks with file paths for implementation.";
 
-    const prompt = buildTasksPrompt(commandContent, featureTitle, featureId, specContent, planContent, this.techStack);
+    const prompt = buildTasksPrompt(commandContent, featureTitle, featureId, specContent, planContent, this.techStack, this.snapshotContent);
     const response = await this.callClaude(prompt);
 
     const tasksPath = join(specsDir, "tasks.md");

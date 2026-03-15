@@ -9,7 +9,6 @@ import { appendToIterationLog } from "../core/compact-state.js";
 import { runAcceptanceGate, applyGateResultToState } from "../core/acceptance-gate.js";
 import { readBacklog, writeBacklog, makeDefaultPhaseRunner } from "./ship-product.js";
 import { verifyImplementationProducedCode } from "../core/spec-kit-runner.js";
-import { bootstrapProduct } from "./bootstrap-product.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -62,16 +61,21 @@ export async function shipFeature(opts: ShipFeatureOptions): Promise<ShipFeature
   const brownfield = isBrownfieldRepo(root);
   const mode: "greenfield" | "brownfield" = brownfield ? "brownfield" : "greenfield";
 
-  // Ensure backlog exists
+  // Ensure backlog exists — required in both modes
   const backlogPath = join(root, "docs", "product-backlog.yaml");
   if (!existsSync(backlogPath)) {
-    if (!brownfield) {
-      // Greenfield: run bootstrap first
-      await bootstrapProduct(root);
-    } else {
-      // Brownfield without backlog: treat as standalone feature
-      return runStandaloneFeature(root, store, mode, featureTarget ?? "Unnamed Feature", dryRun, customPhaseRunner);
-    }
+    return {
+      success: false,
+      featureId: "",
+      featureTitle: featureTarget ?? "(unknown)",
+      mode,
+      brownfieldSnapshotWritten: false,
+      phases: [],
+      coverage: null,
+      error:
+        "product-backlog.yaml not found.\n" +
+        "Run: node run.mjs generate --spec <path> && node run.mjs bootstrap",
+    };
   }
 
   const backlog = readBacklog(root);
@@ -233,63 +237,3 @@ export async function shipFeature(opts: ShipFeatureOptions): Promise<ShipFeature
   };
 }
 
-// ---------------------------------------------------------------------------
-// Standalone feature (brownfield without backlog)
-// ---------------------------------------------------------------------------
-
-async function runStandaloneFeature(
-  root: string,
-  store: StateStore,
-  mode: "greenfield" | "brownfield",
-  featureTitle: string,
-  dryRun: boolean,
-  customPhaseRunner?: import("./ship-product.js").PhaseRunner
-): Promise<ShipFeatureResult> {
-  if (!store.exists()) store.createInitial(mode);
-
-  const snapshot = buildBrownfieldSnapshot(root, featureTitle);
-  let brownfieldSnapshotWritten = false;
-  if (!dryRun) {
-    writeBrownfieldSnapshot(root, snapshot);
-    brownfieldSnapshotWritten = true;
-  }
-
-  store.update({ mode, activeFeature: featureTitle, currentPhase: "spec", status: "running" });
-
-  const phaseRunner = customPhaseRunner ?? makeDefaultPhaseRunner();
-  const phaseResult = await phaseRunner({
-    root,
-    featureId: "standalone",
-    featureTitle,
-    startFromPhase: "spec",
-    dryRun,
-  });
-
-  if (!phaseResult.success) {
-    return {
-      success: false,
-      featureId: "standalone",
-      featureTitle,
-      mode,
-      brownfieldSnapshotWritten,
-      phases: [phaseResult.phase],
-      coverage: null,
-      error: phaseResult.error,
-    };
-  }
-
-  if (!dryRun) {
-    store.update({ activeFeature: null, currentPhase: null, lastError: null });
-    appendToIterationLog(root, `\n## STANDALONE DONE – "${featureTitle}" – ${new Date().toISOString()}\n`);
-  }
-
-  return {
-    success: true,
-    featureId: "standalone",
-    featureTitle,
-    mode,
-    brownfieldSnapshotWritten,
-    phases: ["spec", "clarify", "plan", "tasks", "analyze", "implement", "qa", "done"],
-    coverage: null,
-  };
-}

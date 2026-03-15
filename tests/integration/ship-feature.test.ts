@@ -190,12 +190,12 @@ describe("shipFeature – brownfield", () => {
 // shipFeature – standalone (brownfield, no backlog)
 // ---------------------------------------------------------------------------
 
-describe("shipFeature – standalone brownfield (no backlog)", () => {
+describe("shipFeature – no backlog returns error (backlog required)", () => {
   let tmp: string;
   beforeEach(() => { tmp = makeTmp(); });
   afterEach(() => rmSync(tmp, { recursive: true, force: true }));
 
-  it("runs standalone feature when brownfield repo has no backlog", async () => {
+  it("returns error when brownfield repo has no backlog", async () => {
     // Brownfield setup WITHOUT writing a backlog
     mkdirSync(join(tmp, "src"), { recursive: true });
     writeFileSync(join(tmp, "src", "index.ts"), "export {};", "utf8");
@@ -208,12 +208,13 @@ describe("shipFeature – standalone brownfield (no backlog)", () => {
     writeFileSync(join(tmp, "package.json"), JSON.stringify(pkg), "utf8");
 
     const result = await shipFeature({ root: tmp, featureTarget: "New API Feature", dryRun: true });
-    expect(result.featureId).toBe("standalone");
-    expect(result.featureTitle).toBe("New API Feature");
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("product-backlog.yaml not found");
+    expect(result.error).toContain("generate");
+    expect(result.error).toContain("bootstrap");
   });
 
-  it("standalone non-dryRun writes state and log (covers lines 260-261)", async () => {
-    // Brownfield without backlog, non-dryRun, inject success runner
+  it("returns error (no standalone fallback) when no backlog in non-dryRun", async () => {
     mkdirSync(join(tmp, "src"), { recursive: true });
     writeFileSync(join(tmp, "src", "index.ts"), "export {};", "utf8");
     const pkg = { name: "app", version: "1.0.0", dependencies: { x: "1" }, devDependencies: {} };
@@ -227,9 +228,8 @@ describe("shipFeature – standalone brownfield (no backlog)", () => {
       phaseRunner: successRunner,
     });
 
-    expect(result.success).toBe(true);
-    expect(result.featureId).toBe("standalone");
-    expect(existsSync(join(tmp, "docs", "iteration-log.md"))).toBe(true);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("product-backlog.yaml not found");
   });
 });
 

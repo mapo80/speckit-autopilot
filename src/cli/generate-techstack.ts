@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
 import { join } from "path";
 import { callClaudeForReview } from "./audit.js";
+import type { BrownfieldSnapshot } from "../core/brownfield-snapshot.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -66,6 +67,61 @@ ${productMdContent}`;
 }
 
 // ---------------------------------------------------------------------------
+// buildTechStackFromSnapshotPrompt
+// ---------------------------------------------------------------------------
+
+function buildTechStackFromSnapshotPrompt(snapshot: BrownfieldSnapshot): string {
+  const languages = snapshot.techStack.language.join(", ") || "Not detected";
+  const frameworks = snapshot.techStack.frameworks.join(", ") || "Not detected";
+  const buildTools = snapshot.techStack.buildTools.join(", ") || "Not detected";
+  const runtime = snapshot.techStack.runtime || "Not detected";
+  const testFramework = snapshot.testFramework
+    ? `${snapshot.testFramework.name} (${snapshot.testFramework.location})`
+    : "Not detected";
+
+  return `You are generating docs/tech-stack.md for an existing codebase.
+
+The following tech stack was detected by static analysis of the project:
+
+Languages: ${languages}
+Frameworks: ${frameworks}
+Build tools: ${buildTools}
+Runtime: ${runtime}
+Test framework: ${testFramework}
+Entry points: ${snapshot.entryPoints.map((e) => e.file).join(", ") || "none detected"}
+
+Output ONLY a valid docs/tech-stack.md — no preamble, no closing remarks.
+Expand the detected information into the structured format below.
+Only include sections that are applicable based on the detected stack.
+
+# Tech Stack
+
+## Backend
+- Language / Runtime: <from detected languages/runtime>
+- Framework: <from detected frameworks>
+- Architecture: <infer from project structure if possible — or "Not specified">
+- Test framework: <from detected test framework>
+
+## Frontend (omit section if not applicable)
+- Framework: <from detected frameworks>
+- Build tool: <from detected build tools>
+
+## Mobile (omit section if not applicable)
+- Framework: <from detected frameworks>
+
+## Database (omit section if not applicable)
+- Primary: <if detectable from dependencies>
+
+## Infrastructure (omit section if not applicable)
+- Containers: <if Docker/Kubernetes detected>
+
+RULES:
+- Use ONLY what was detected — do not invent technologies
+- Omit entire sections when clearly not applicable
+- Output ONLY the markdown`;
+}
+
+// ---------------------------------------------------------------------------
 // generateTechStack
 // ---------------------------------------------------------------------------
 
@@ -115,4 +171,37 @@ export async function generateTechStack(
   writeFileSync(techStackPath, output, "utf8");
 
   return { techStackPath, created: true, backupPath };
+}
+
+// ---------------------------------------------------------------------------
+// generateTechStackFromSnapshot
+// ---------------------------------------------------------------------------
+
+/**
+ * Generate docs/tech-stack.md from an already-built BrownfieldSnapshot.
+ * Used during bootstrap when an existing codebase is detected.
+ *
+ * @param root       Target project root
+ * @param callClaude Injectable Claude call
+ * @param snapshot   Pre-built brownfield snapshot (from buildBrownfieldSnapshot)
+ */
+export async function generateTechStackFromSnapshot(
+  root: string,
+  callClaude: (prompt: string) => Promise<string>,
+  snapshot: BrownfieldSnapshot,
+): Promise<GenerateTechStackResult> {
+  const docsDir = join(root, "docs");
+  const techStackPath = join(docsDir, "tech-stack.md");
+
+  if (existsSync(techStackPath)) {
+    return { techStackPath, created: false };
+  }
+
+  const prompt = buildTechStackFromSnapshotPrompt(snapshot);
+  const output = await callClaude(prompt);
+
+  mkdirSync(docsDir, { recursive: true });
+  writeFileSync(techStackPath, output, "utf8");
+
+  return { techStackPath, created: true };
 }
