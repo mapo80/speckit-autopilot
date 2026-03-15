@@ -5,7 +5,7 @@ import yaml from "js-yaml";
 import { StateStore } from "../../src/core/state-store.js";
 import { makeEmptyBacklog, Feature, Backlog } from "../../src/core/backlog-schema.js";
 import { resumeLoop } from "../../src/cli/resume-loop.js";
-import { PhaseRunner } from "../../src/cli/ship-product.js";
+import { PhaseRunner } from "../../src/cli/ship.js";
 
 // ---------------------------------------------------------------------------
 // Helpers

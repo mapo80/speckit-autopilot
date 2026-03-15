@@ -4,7 +4,7 @@ import { join } from "path";
 import yaml from "js-yaml";
 import { StateStore } from "../../src/core/state-store.js";
 import { makeEmptyBacklog, Feature, Backlog } from "../../src/core/backlog-schema.js";
-import { shipProduct, readBacklog, writeBacklog, PhaseRunner } from "../../src/cli/ship-product.js";
+import { ship as shipProduct, readBacklog, writeBacklog, PhaseRunner } from "../../src/cli/ship.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -89,8 +89,9 @@ describe("shipProduct", () => {
   beforeEach(() => { tmp = makeTmp(); });
   afterEach(() => rmSync(tmp, { recursive: true, force: true }));
 
-  it("throws when state file is missing", async () => {
-    await expect(shipProduct({ root: tmp, dryRun: true })).rejects.toThrow();
+  it("returns error when backlog is missing (no throw)", async () => {
+    const result = await shipProduct({ root: tmp, dryRun: true });
+    expect(result.success).toBe(false);
   });
 
   it("completes when all features are done", async () => {
@@ -178,7 +179,7 @@ describe("makeDefaultPhaseRunner (non-dryRun paths)", () => {
   afterEach(() => rmSync(tmp, { recursive: true, force: true }));
 
   it("dryRun path returns success with implement as last phase", async () => {
-    const { makeDefaultPhaseRunner } = await import("../../src/cli/ship-product.js");
+    const { makeDefaultPhaseRunner } = await import("../../src/cli/ship.js");
     const runner = makeDefaultPhaseRunner();
     setupProject(tmp, [makeFeature("F-001")]);
 
@@ -195,7 +196,7 @@ describe("makeDefaultPhaseRunner (non-dryRun paths)", () => {
   });
 
   it("dryRun with startFromPhase:plan slices phases correctly", async () => {
-    const { makeDefaultPhaseRunner } = await import("../../src/cli/ship-product.js");
+    const { makeDefaultPhaseRunner } = await import("../../src/cli/ship.js");
     const runner = makeDefaultPhaseRunner();
     setupProject(tmp, [makeFeature("F-001")]);
 
@@ -211,7 +212,7 @@ describe("makeDefaultPhaseRunner (non-dryRun paths)", () => {
   });
 
   it("non-dryRun uses dryRun path correctly when dryRun:true", async () => {
-    const { makeDefaultPhaseRunner } = await import("../../src/cli/ship-product.js");
+    const { makeDefaultPhaseRunner } = await import("../../src/cli/ship.js");
     const runner = makeDefaultPhaseRunner();
 
     mkdirSync(join(tmp, ".specify"), { recursive: true });
@@ -231,7 +232,7 @@ describe("makeDefaultPhaseRunner (non-dryRun paths)", () => {
   });
 
   it("non-dryRun with backlog reads acceptance criteria without error", async () => {
-    const { makeDefaultPhaseRunner } = await import("../../src/cli/ship-product.js");
+    const { makeDefaultPhaseRunner } = await import("../../src/cli/ship.js");
     const runner = makeDefaultPhaseRunner();
 
     mkdirSync(join(tmp, ".specify"), { recursive: true });
@@ -255,7 +256,7 @@ describe("makeDefaultPhaseRunner (non-dryRun paths)", () => {
   });
 
   it("non-dryRun proceeds without backlog (criteria empty)", async () => {
-    const { makeDefaultPhaseRunner } = await import("../../src/cli/ship-product.js");
+    const { makeDefaultPhaseRunner } = await import("../../src/cli/ship.js");
     const runner = makeDefaultPhaseRunner();
 
     mkdirSync(join(tmp, ".specify"), { recursive: true });

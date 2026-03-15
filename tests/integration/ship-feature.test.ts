@@ -4,8 +4,7 @@ import { join } from "path";
 import yaml from "js-yaml";
 import { StateStore } from "../../src/core/state-store.js";
 import { makeEmptyBacklog, Feature, Backlog } from "../../src/core/backlog-schema.js";
-import { shipFeature, resolveTargetFeature } from "../../src/cli/ship-feature.js";
-import { readBacklog } from "../../src/cli/ship-product.js";
+import { ship as shipFeature, resolveTargetFeature, readBacklog } from "../../src/cli/ship.js";
 import { formatStatus } from "../../src/cli/resume-loop.js";
 
 // ---------------------------------------------------------------------------
@@ -109,7 +108,7 @@ describe("shipFeature – greenfield", () => {
 
   it("ships a feature successfully (dry run)", async () => {
     setupGreenfield(tmp, [makeFeature("F-001")]);
-    const result = await shipFeature({ root: tmp, dryRun: true });
+    const result = await shipFeature({ root: tmp, featureTarget: "F-001", dryRun: true });
     expect(result.success).toBe(true);
     expect(result.featureId).toBe("F-001");
   });
@@ -135,10 +134,10 @@ describe("shipFeature – greenfield", () => {
     expect(backlog.features[0].status).toBe("done");
   });
 
-  it("includes phases in result on success", async () => {
+  it("includes iterations in result on success", async () => {
     setupGreenfield(tmp, [makeFeature("F-001")]);
-    const result = await shipFeature({ root: tmp, dryRun: true });
-    expect(result.phases.length).toBeGreaterThan(0);
+    const result = await shipFeature({ root: tmp, featureTarget: "F-001", dryRun: true });
+    expect(result.iterations.length).toBeGreaterThan(0);
   });
 
   it("writes iteration log on success (non-dry-run)", async () => {

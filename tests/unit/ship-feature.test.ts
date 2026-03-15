@@ -8,8 +8,8 @@ import { join } from "path";
 import yaml from "js-yaml";
 import { makeEmptyBacklog, Feature, Backlog } from "../../src/core/backlog-schema.js";
 import { StateStore } from "../../src/core/state-store.js";
-import { shipFeature, resolveTargetFeature } from "../../src/cli/ship-feature.js";
-import type { PhaseRunner } from "../../src/cli/ship-product.js";
+import { ship as shipFeature, resolveTargetFeature } from "../../src/cli/ship.js";
+import type { PhaseRunner } from "../../src/cli/ship.js";
 
 // ---------------------------------------------------------------------------
 // Helpers

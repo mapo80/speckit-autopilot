@@ -91,11 +91,9 @@ snapshot and uses it as context in all implementation phases.
              │  │  - autopilot-state.json created?            │
              │  └─────────────────────────────────────────────┘
              ▼
-  ┌──────────────────────┐         ┌────────────────────────────────┐
-  │  ship                │   OR    │  ship-feature --feature F-001  │
-  └──────────┬───────────┘         └────────────────┬───────────────┘
-             │                                      │
-             └─────────────────┬────────────────────┘
+  ┌──────────────────────────────────────────────────┐
+  │  ship [--feature F-001]                          │
+  └──────────┬───────────────────────────────────────┘
                                │
              │  ┌──────────────────────────────────────────────────────┐
              │  │  For each open feature (dependency order):           │
@@ -157,7 +155,7 @@ The audit runs automatically at every stage — no manual invocation needed duri
   bootstrap ──► [AUDIT static] backlog consistency
                  - count match vs product.md, empty criteria check
 
-  ship/ship-feature (per feature)
+  ship (per feature)
      ──► implement
      ──► QA gate (lint + tests + coverage)  ← BLOCKS on failure
      ──► [AUDIT AI] spec.md → file list     ← informational only
@@ -184,8 +182,7 @@ One Claude call per feature; for 19 features that adds ~20-40 min to `audit` sta
 | `/generate-product` | Read any spec file → `docs/product.md` |
 | `/generate-techstack` | Infer tech stack from `docs/product.md` → `docs/tech-stack.md` (backs up existing) |
 | `/bootstrap-product` | Parse `docs/product.md` → roadmap + backlog + state + tech-stack (if absent) |
-| `/ship-product` | Ship all open features iteratively |
-| `/ship-feature [target]` | Ship one feature (codebase context injected automatically if source code exists) |
+| `/ship [--feature <id-or-title>]` | Ship all open features; with `--feature`, ships one specific feature |
 | `/resume-loop` | Resume after `/compact` or session restart |
 | `/status` | Show current phase, backlog summary, last error |
 | `/audit` | Full quality audit → `docs/audit-report.md` |
@@ -197,8 +194,7 @@ One Claude call per feature; for 19 features that adds ~20-40 min to `audit` sta
 | `generate` | Read spec → `docs/product.md`, then audit product.md | `--spec <path>` (required) |
 | `generate-techstack` | Infer tech stack from `docs/product.md` → `docs/tech-stack.md` (backs up existing) | — |
 | `bootstrap` | Parse `docs/product.md` → backlog + state + tech-stack (if absent), then audit backlog | — |
-| `ship` | Implement all open features, audit each after completion | — |
-| `ship-feature` | Implement a single feature (codebase snapshot injected if source code exists) | `--feature F-001` (optional, picks next open if omitted) |
+| `ship [--feature <id-or-title>]` | Implement all open features; with `--feature`, ships one specific feature | `--feature F-001` or `--feature "payment"` (optional) |
 | `all` | `generate` + `bootstrap` + `ship` in sequence | `--spec <path>` (required) |
 | `status` | Print current phase, backlog summary, recent log | — |
 | `audit` | Full QA audit → `docs/audit-report.md` + per-feature `audit.md` | — |
@@ -210,14 +206,14 @@ One Claude call per feature; for 19 features that adds ~20-40 min to `audit` sta
 node run.mjs generate        --root ./my-project --spec ./requirements.md
 node run.mjs bootstrap       --root ./my-project
 node run.mjs ship            --root ./my-project
-node run.mjs ship-feature    --root ./my-project --feature F-003
+node run.mjs ship            --root ./my-project --feature F-003
 node run.mjs all             --root ./my-project --spec ./requirements.md
 node run.mjs status          --root ./my-project
 node run.mjs audit           --root ./my-project
 
 # Or via the installed binary
 speckit-autopilot ship         --root ./my-project
-speckit-autopilot ship-feature --root ./my-project --feature F-003
+speckit-autopilot ship         --root ./my-project --feature F-003
 speckit-autopilot audit        --root ./my-project
 ```
 
@@ -336,8 +332,7 @@ speckit-autopilot/
 │   ├── audit.md
 │   ├── bootstrap-product.md
 │   ├── generate-product.md
-│   ├── ship-product.md
-│   ├── ship-feature.md
+│   ├── ship.md
 │   ├── resume-loop.md
 │   └── status.md
 ├── src/
@@ -349,8 +344,7 @@ speckit-autopilot/
 │   │   ├── state-store.ts       # autopilot-state.json read/write
 │   │   └── compact-state.ts     # iteration-log.md append
 │   └── cli/                 # CLI orchestration
-│       ├── ship-product.ts      # full product ship loop
-│       ├── ship-feature.ts      # single feature ship
+│       ├── ship.ts              # unified ship (all features or single via --feature)
 │       ├── bootstrap-product.ts # backlog + state init
 │       ├── generate-product.ts  # two-call generate: manifest extraction + guided product.md
 │       ├── audit.ts             # unified audit (generate + bootstrap + feature AI review)

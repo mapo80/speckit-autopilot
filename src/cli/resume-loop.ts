@@ -9,9 +9,7 @@ import {
   phaseToSpeckitCommand,
   appendToIterationLog,
 } from "../core/compact-state.js";
-import { readBacklog } from "./ship-product.js";
-import { shipProduct } from "./ship-product.js";
-import { PhaseRunner } from "./ship-product.js";
+import { readBacklog, ship as shipProduct, PhaseRunner } from "./ship.js";
 
 // ---------------------------------------------------------------------------
 // Types

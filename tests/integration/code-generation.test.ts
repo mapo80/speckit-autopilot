@@ -12,7 +12,7 @@ import { join } from "path";
 import yaml from "js-yaml";
 import { StateStore } from "../../src/core/state-store.js";
 import { makeEmptyBacklog, Feature, Backlog } from "../../src/core/backlog-schema.js";
-import { shipProduct, readBacklog, PhaseRunner } from "../../src/cli/ship-product.js";
+import { ship as shipProduct, readBacklog, PhaseRunner } from "../../src/cli/ship.js";
 import { bootstrapProduct } from "../../src/cli/bootstrap-product.js";
 import { verifyImplementationProducedCode } from "../../src/core/spec-kit-runner.js";
 
@@ -233,7 +233,7 @@ describe("makeDefaultPhaseRunner with mocked SDK", () => {
 
   it("dryRun mode succeeds without API key or file writes", async () => {
     // Import makeDefaultPhaseRunner lazily to allow for module-level setup
-    const { makeDefaultPhaseRunner } = await import("../../src/cli/ship-product.js");
+    const { makeDefaultPhaseRunner } = await import("../../src/cli/ship.js");
     const runner = makeDefaultPhaseRunner();
 
     const result = await runner({
@@ -252,7 +252,7 @@ describe("makeDefaultPhaseRunner with mocked SDK", () => {
     delete process.env.ANTHROPIC_API_KEY;
 
     try {
-      const { makeDefaultPhaseRunner } = await import("../../src/cli/ship-product.js");
+      const { makeDefaultPhaseRunner } = await import("../../src/cli/ship.js");
       const runner = makeDefaultPhaseRunner();
 
       // Pre-create .specify + .claude/commands so init is skipped

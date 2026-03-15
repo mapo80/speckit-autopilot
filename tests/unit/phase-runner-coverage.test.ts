@@ -9,7 +9,7 @@ import { join } from "path";
 import yaml from "js-yaml";
 import { StateStore } from "../../src/core/state-store.js";
 import { makeEmptyBacklog, Feature, Backlog } from "../../src/core/backlog-schema.js";
-import { makeDefaultPhaseRunner } from "../../src/cli/ship-product.js";
+import { makeDefaultPhaseRunner } from "../../src/cli/ship.js";
 import { SpecKitRunner, verifyImplementationProducedCode } from "../../src/core/spec-kit-runner.js";
 import { generateRoadmap, renderRoadmapMarkdown } from "../../src/core/roadmap-generator.js";
 

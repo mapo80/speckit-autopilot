@@ -12,8 +12,7 @@ import { join } from "path";
 import yaml from "js-yaml";
 import { StateStore } from "../../src/core/state-store.js";
 import { makeEmptyBacklog, Feature, Backlog, featureNextId } from "../../src/core/backlog-schema.js";
-import { shipProduct, readBacklog, writeBacklog, PhaseRunner, makeDefaultPhaseRunner } from "../../src/cli/ship-product.js";
-import { shipFeature } from "../../src/cli/ship-feature.js";
+import { ship as shipProduct, ship as shipFeature, readBacklog, writeBacklog, PhaseRunner, makeDefaultPhaseRunner } from "../../src/cli/ship.js";
 import { resumeLoop } from "../../src/cli/resume-loop.js";
 import { parseProductMd, buildBacklogFromProduct } from "../../src/cli/bootstrap-product.js";
 import { topologicalSort } from "../../src/core/roadmap-generator.js";
@@ -144,6 +143,7 @@ describe("shipFeature – phase failure (non-dry-run)", () => {
 
     const result = await shipFeature({
       root: tmp,
+      featureTarget: "F-001",
       phaseRunner: makeFailRunner(),
       dryRun: false,
     });
@@ -183,6 +183,7 @@ describe("shipFeature – QA gate failure (non-dry-run)", () => {
 
     const result = await shipFeature({
       root: tmp,
+      featureTarget: "F-001",
       phaseRunner: makeSuccessRunner(),
       dryRun: false,
     });
@@ -589,6 +590,7 @@ describe("shipFeature – state file missing when backlog exists", () => {
 
     const result = await shipFeature({
       root: tmp,
+      featureTarget: "F-001",
       phaseRunner: makeSuccessRunner(),
       dryRun: true,
     });

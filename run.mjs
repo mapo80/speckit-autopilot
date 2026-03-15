@@ -7,7 +7,6 @@
 //   node run.mjs all       --root /path/to/project --spec /path/to/spec.md
 
 import { bootstrapProduct } from './dist/cli/bootstrap-product.js';
-import { shipProduct } from './dist/cli/ship-product.js';
 import { resolve } from 'path';
 
 const args = process.argv.slice(2);
@@ -19,7 +18,7 @@ const specFile = specIndex !== -1 ? resolve(args[specIndex + 1]) : null;
 const featureIndex = args.indexOf('--feature');
 const featureTarget = featureIndex !== -1 ? args[featureIndex + 1] : undefined;
 
-const COMMANDS = ['generate', 'generate-techstack', 'bootstrap', 'ship', 'ship-feature', 'all', 'audit', 'status'];
+const COMMANDS = ['generate', 'generate-techstack', 'bootstrap', 'ship', 'all', 'audit', 'status'];
 
 if (!command || command === '--help' || command === '-h') {
   console.log(`
@@ -29,8 +28,7 @@ Commands:
   generate         Read any spec file and write docs/product.md, then validate it (requires --spec)
   generate-techstack  Infer tech stack from docs/product.md and write docs/tech-stack.md (backs up existing)
   bootstrap        Parse docs/product.md and create backlog + roadmap + state
-  ship             Implement all open features one by one (auto-resumes after interruption)
-  ship-feature     Implement a single feature (--feature F-001 or next open)
+  ship             Implement features; all open by default, or a single one with --feature
   all              generate (if --spec) + bootstrap + ship in sequence
   audit            Full quality audit: validate product.md + backlog + AI review per feature → docs/audit-report.md
   status           Print current phase, backlog summary, and recent log
@@ -38,13 +36,13 @@ Commands:
 Options:
   --root <path>      Target project directory (default: current directory)
   --spec <path>      Source specification file — required for generate
-  --feature <id>     Feature ID for ship-feature (e.g. F-001); omit to pick next open
+  --feature <id>     Feature ID or title substring for ship (e.g. F-001 or "payment"); omit to ship all
 
 Examples:
   node run.mjs generate        --root /path/to/project --spec /path/to/spec.md
   node run.mjs bootstrap       --root /path/to/project
   node run.mjs ship            --root /path/to/project
-  node run.mjs ship-feature    --root /path/to/project --feature F-003
+  node run.mjs ship            --root /path/to/project --feature F-003
   node run.mjs all             --root /path/to/project --spec /path/to/spec.md
   node run.mjs audit           --root /path/to/project
   node run.mjs status          --root /path/to/project
@@ -106,15 +104,9 @@ try {
   }
 
   if (command === 'ship' || command === 'all') {
-    console.log('--- SHIP PRODUCT ---');
-    const result = await shipProduct({ root });
-    console.log(JSON.stringify(result, null, 2));
-  }
-
-  if (command === 'ship-feature') {
-    console.log('--- SHIP FEATURE ---');
-    const { shipFeature } = await import('./dist/cli/ship-feature.js');
-    const result = await shipFeature({ root, featureTarget });
+    console.log('--- SHIP ---');
+    const { ship } = await import('./dist/cli/ship.js');
+    const result = await ship({ root, featureTarget });
     console.log(JSON.stringify(result, null, 2));
   }
 
