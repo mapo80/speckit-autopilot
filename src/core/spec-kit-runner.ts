@@ -105,6 +105,20 @@ function readArtifact(path: string): string | null {
 }
 
 // ---------------------------------------------------------------------------
+// Tech stack detection
+// ---------------------------------------------------------------------------
+
+/**
+ * Read the project tech stack from docs/tech-stack.md.
+ * Returns the file content if present, otherwise defaults to "TypeScript".
+ */
+export function readTechStack(root: string): string {
+  const p = join(root, "docs", "tech-stack.md");
+  if (!existsSync(p)) return "TypeScript";
+  return readFileSync(p, "utf8").trim();
+}
+
+// ---------------------------------------------------------------------------
 // Prompt builders per phase
 // ---------------------------------------------------------------------------
 
@@ -112,7 +126,8 @@ function buildSpecPrompt(
   _commandContent: string,
   featureTitle: string,
   acceptanceCriteria: string[],
-  specTemplate: string | null
+  specTemplate: string | null,
+  techStack: string
 ): string {
   const criteriaBlock =
     acceptanceCriteria.length > 0
@@ -124,10 +139,13 @@ function buildSpecPrompt(
 FEATURE: ${featureTitle}
 ${criteriaBlock}
 
+TECH STACK:
+${techStack}
+
 SPEC TEMPLATE:
 ${specTemplate ?? "Use sections: User Scenarios, Requirements, Success Criteria"}
 
-Generate a complete feature specification for "${featureTitle}".
+Generate a complete feature specification for "${featureTitle}" targeting the tech stack above.
 Start with: # Feature Specification: ${featureTitle}
 Include at least 2 user stories. Focus on WHAT, not HOW. No code.
 
@@ -138,11 +156,15 @@ function buildPlanPrompt(
   _commandContent: string,
   featureTitle: string,
   specContent: string,
-  planTemplate: string | null
+  planTemplate: string | null,
+  techStack: string
 ): string {
   return `You are an expert software architect. Output ONLY a Markdown plan document. Do NOT use any tools.
 
 FEATURE: ${featureTitle}
+
+TECH STACK:
+${techStack}
 
 SPECIFICATION:
 ${specContent}
@@ -150,9 +172,9 @@ ${specContent}
 PLAN TEMPLATE:
 ${planTemplate ?? "Sections: Summary, Technical Context, Project Structure, Phases"}
 
-Generate an implementation plan for "${featureTitle}" in TypeScript.
+Generate an implementation plan for "${featureTitle}" using the tech stack above.
 Start with: # Implementation Plan: ${featureTitle}
-Include exact file paths (use src/features/ directory). No code, just the plan.
+Include exact file paths matching the tech stack conventions. No code, just the plan.
 
 Output the plan document now.`;
 }
@@ -162,12 +184,16 @@ function buildTasksPrompt(
   featureTitle: string,
   featureId: string,
   specContent: string,
-  planContent: string
+  planContent: string,
+  techStack: string
 ): string {
   return `You are an expert software engineer. Output ONLY a Markdown task list. Do NOT use any tools.
 
 FEATURE: ${featureTitle}
 FEATURE ID: ${featureId}
+
+TECH STACK:
+${techStack}
 
 SPECIFICATION:
 ${specContent}
@@ -177,8 +203,8 @@ ${planContent}
 
 Generate a tasks.md for "${featureTitle}".
 Start with: # Tasks: ${featureTitle}
-Each task format: - [ ] T001 Description (file: src/features/${featureId}/index.ts)
-Include setup and implementation tasks with exact TypeScript file paths.
+Each task format: - [ ] T001 Description (file: <path appropriate for the tech stack above>)
+Include setup and implementation tasks with exact file paths matching the tech stack conventions.
 
 Output the tasks document now.`;
 }
@@ -189,12 +215,13 @@ function buildImplementPrompt(
   featureId: string,
   specContent: string,
   planContent: string,
-  tasksContent: string
+  tasksContent: string,
+  techStack: string
 ): string {
   // NOTE: we intentionally do NOT include the speckit.implement.md command
   // instructions here, because those instruct claude to use file-writing tools.
   // We need plain text output only — we write the files ourselves.
-  return `You are an expert TypeScript developer. Your job is to produce source code as plain text output ONLY.
+  return `You are an expert developer. Your job is to produce source code as plain text output ONLY.
 
 IMPORTANT CONSTRAINTS:
 - Do NOT use any tools, file writing, or bash commands.
@@ -203,6 +230,9 @@ IMPORTANT CONSTRAINTS:
 
 FEATURE: ${featureTitle}
 FEATURE ID: ${featureId}
+
+TECH STACK:
+${techStack}
 
 SPECIFICATION:
 ${specContent}
@@ -214,17 +244,17 @@ TASKS:
 ${tasksContent}
 
 YOUR TASK:
-Generate complete, working TypeScript source files for "${featureTitle}".
+Generate complete, working source files for "${featureTitle}" using the tech stack above.
 
 MANDATORY OUTPUT FORMAT — use this exact format for every file:
-<<<FILE: src/features/${featureId}/index.ts>>>
-// TypeScript source code here
+<<<FILE: relative/path/to/file>>>
+// source code here
 <<<END_FILE>>>
 
 Requirements:
-1. At minimum generate src/features/${featureId}/index.ts
-2. Also generate src/features/${featureId}/types.ts if you need complex types
-3. All code must be complete and runnable TypeScript — no pseudocode
+1. Generate all files required by the implementation plan
+2. File paths must match the conventions in the tech stack
+3. All code must be complete and runnable — no pseudocode
 4. Export all public types and functions
 5. Implement every acceptance criterion from the spec
 
@@ -381,6 +411,7 @@ export class SpecKitRunner {
   private readonly root: string;
   private readonly model = "claude-sonnet-4-6";
   private readonly claudePath: string = "claude";
+  private readonly techStack: string;
 
   constructor(root: string, apiKey?: string) {
     this.root = root;
@@ -401,6 +432,7 @@ export class SpecKitRunner {
       }
       this.mode = "cli";
     }
+    this.techStack = readTechStack(root);
   }
 
   /** Expose mode for testing / logging */
@@ -460,7 +492,7 @@ export class SpecKitRunner {
       "Create a feature specification with User Scenarios, Requirements, and Success Criteria.";
     const specTemplate = readTemplateFile(this.root, "spec-template.md");
 
-    const prompt = buildSpecPrompt(commandContent, featureTitle, acceptanceCriteria, specTemplate);
+    const prompt = buildSpecPrompt(commandContent, featureTitle, acceptanceCriteria, specTemplate, this.techStack);
     const response = await this.callClaude(prompt);
 
     const specsDir = this.specsDir(featureId);
@@ -479,7 +511,7 @@ export class SpecKitRunner {
       "Create an implementation plan with Technical Context and Project Structure.";
     const planTemplate = readTemplateFile(this.root, "plan-template.md");
 
-    const prompt = buildPlanPrompt(commandContent, featureTitle, specContent, planTemplate);
+    const prompt = buildPlanPrompt(commandContent, featureTitle, specContent, planTemplate, this.techStack);
     const response = await this.callClaude(prompt);
 
     const planPath = join(specsDir, "plan.md");
@@ -497,7 +529,7 @@ export class SpecKitRunner {
       readCommandFile(this.root, "speckit.tasks") ??
       "Generate actionable tasks with file paths for implementation.";
 
-    const prompt = buildTasksPrompt(commandContent, featureTitle, featureId, specContent, planContent);
+    const prompt = buildTasksPrompt(commandContent, featureTitle, featureId, specContent, planContent, this.techStack);
     const response = await this.callClaude(prompt);
 
     const tasksPath = join(specsDir, "tasks.md");
@@ -522,7 +554,8 @@ export class SpecKitRunner {
       featureId,
       specContent,
       planContent,
-      tasksContent
+      tasksContent,
+      this.techStack
     );
     const response = await this.callClaude(prompt);
 

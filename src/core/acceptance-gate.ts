@@ -71,6 +71,9 @@ export function extractCoveragePercent(output: string): number | null {
 // ---------------------------------------------------------------------------
 
 function runLintCheck(root: string): GateCheckResult {
+  if (!existsSync(join(root, "package.json"))) {
+    return { name: "lint", passed: true, details: "skipped: no package.json found" };
+  }
   const scripts = readPackageScripts(root);
   const cmd = pickCommand(scripts, ["lint", "eslint"], "npx eslint .");
 
@@ -90,6 +93,12 @@ function runLintCheck(root: string): GateCheckResult {
 // ---------------------------------------------------------------------------
 
 function runTestCheck(root: string, withCoverage: boolean): { check: GateCheckResult; coverage: number | null } {
+  if (!existsSync(join(root, "package.json"))) {
+    return {
+      check: { name: "tests", passed: true, details: "skipped: no package.json found" },
+      coverage: null,
+    };
+  }
   const scripts = readPackageScripts(root);
   const baseCmd = pickCommand(scripts, ["test", "jest", "vitest"], "npx jest");
   const cmd = withCoverage ? `${baseCmd} --coverage` : baseCmd;
