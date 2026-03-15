@@ -241,7 +241,8 @@ describe("shipFeature – standalone brownfield non-dry-run", () => {
     writeFileSync(join(tmp, "package.json"), JSON.stringify(pkg), "utf8");
     // No backlog → standalone path
 
-    const result = await shipFeature({ root: tmp, featureTarget: "New Feature", dryRun: false });
+    const noopRunner = async () => ({ success: true, phase: "implement" as const });
+    const result = await shipFeature({ root: tmp, featureTarget: "New Feature", dryRun: false, phaseRunner: noopRunner });
     expect(result.brownfieldSnapshotWritten).toBe(true);
     expect(existsSync(join(tmp, "docs", "brownfield-snapshot.md"))).toBe(true);
   });

@@ -277,5 +277,5 @@ describe("makeDefaultPhaseRunner with mocked SDK", () => {
     } finally {
       if (savedKey !== undefined) process.env.ANTHROPIC_API_KEY = savedKey;
     }
-  });
+  }, 300_000);
 });

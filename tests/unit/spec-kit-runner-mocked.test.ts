@@ -23,8 +23,55 @@ function makeTmp(): string {
 
 const mockSpawnSync = jest.fn();
 
+// Queue of responses for mockSpawn. Each call pops one entry.
+const spawnResponseQueue: Array<{ stdout: string; exitCode: number }> = [];
+
+function pushSpawnResponse(stdout: string, exitCode = 0): void {
+  spawnResponseQueue.push({ stdout, exitCode });
+}
+
+function resetSpawnResponses(): void {
+  spawnResponseQueue.length = 0;
+}
+
+const mockSpawn = jest.fn(() => {
+  const response = spawnResponseQueue.shift() ?? { stdout: "", exitCode: 0 };
+  const stdoutHandlers: Array<(chunk: Buffer) => void> = [];
+  const stderrHandlers: Array<(chunk: Buffer) => void> = [];
+  const closeHandlers: Array<(code: number) => void> = [];
+
+  const proc = {
+    stdin: {
+      write: jest.fn(),
+      end: jest.fn(() => {
+        // Emit stdout data and close asynchronously
+        setImmediate(() => {
+          for (const h of stdoutHandlers) h(Buffer.from(response.stdout));
+          for (const h of closeHandlers) h(response.exitCode);
+        });
+      }),
+    },
+    stdout: {
+      on: jest.fn((event: string, handler: (chunk: Buffer) => void) => {
+        if (event === "data") stdoutHandlers.push(handler);
+      }),
+    },
+    stderr: {
+      on: jest.fn((event: string, handler: (chunk: Buffer) => void) => {
+        if (event === "data") stderrHandlers.push(handler);
+      }),
+    },
+    on: jest.fn((event: string, handler: (code: number) => void) => {
+      if (event === "close") closeHandlers.push(handler);
+    }),
+    kill: jest.fn(),
+  };
+  return proc;
+});
+
 await jest.unstable_mockModule("child_process", () => ({
   spawnSync: mockSpawnSync,
+  spawn: mockSpawn,
 }));
 
 const { verifyImplementationProducedCode, ensureSpecKitInitialized, SpecKitRunner } = await import(
@@ -162,17 +209,19 @@ describe("SpecKitRunner – CLI mode via claude --print", () => {
     tmp = makeTmp();
     mkdirSync(join(tmp, "docs"), { recursive: true });
     mockSpawnSync.mockReset();
+    mockSpawn.mockClear();
+    resetSpawnResponses();
   });
   afterEach(() => {
     rmSync(tmp, { recursive: true, force: true });
   });
 
   function setupCliMock(responses: string[]): void {
-    // First call: claude --version (constructor check)
+    // Constructor check uses spawnSync for --version
     mockSpawnSync.mockReturnValueOnce({ status: 0, stdout: "claude 1.0.0", stderr: "" });
-    // Subsequent calls: claude --print (one per phase)
+    // Phase calls use async spawn
     for (const response of responses) {
-      mockSpawnSync.mockReturnValueOnce({ status: 0, stdout: response, stderr: "" });
+      pushSpawnResponse(response, 0);
     }
   }
 
@@ -203,20 +252,20 @@ describe("SpecKitRunner – CLI mode via claude --print", () => {
   });
 
   it("throws when claude --print returns non-zero", async () => {
-    // claude --version succeeds
+    // Constructor --version check
     mockSpawnSync.mockReturnValueOnce({ status: 0, stdout: "claude 1.0.0", stderr: "" });
-    // claude --print fails
-    mockSpawnSync.mockReturnValueOnce({ status: 1, stdout: "", stderr: "rate limit" });
+    // claude --print fails via spawn
+    pushSpawnResponse("", 1);
 
     const runner = new SpecKitRunner(tmp);
     await expect(runner.runSpec("F-001", "Task CRUD", [])).rejects.toThrow(/claude CLI failed/);
   });
 
   it("throws when claude --print returns empty output", async () => {
-    // claude --version succeeds
+    // Constructor --version check
     mockSpawnSync.mockReturnValueOnce({ status: 0, stdout: "claude 1.0.0", stderr: "" });
-    // claude --print returns empty
-    mockSpawnSync.mockReturnValueOnce({ status: 0, stdout: "", stderr: "" });
+    // claude --print returns empty via spawn
+    pushSpawnResponse("", 0);
 
     const runner = new SpecKitRunner(tmp);
     await expect(runner.runSpec("F-001", "Task CRUD", [])).rejects.toThrow(/empty response/);

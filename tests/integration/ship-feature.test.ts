@@ -167,7 +167,8 @@ describe("shipFeature – brownfield", () => {
 
   it("writes brownfield-snapshot.md in non-dry-run mode", async () => {
     setupBrownfield(tmp, [makeFeature("F-001")]);
-    const result = await shipFeature({ root: tmp, dryRun: false });
+    const noopRunner = async () => ({ success: true, phase: "implement" as const });
+    const result = await shipFeature({ root: tmp, dryRun: false, phaseRunner: noopRunner });
     expect(result.brownfieldSnapshotWritten).toBe(true);
     expect(existsSync(join(tmp, "docs", "brownfield-snapshot.md"))).toBe(true);
   });
