@@ -204,6 +204,38 @@ export function auditGenerate(root: string): AuditGenerateResult {
     warnings.push(`${missingCriteria} feature(s) missing acceptance criteria`);
   }
 
+  // Check A — ## Vision section present
+  if (!content.includes("## Vision")) {
+    warnings.push("Missing '## Vision' section");
+  }
+
+  // Check B — Feature heading format: ### Feature N - EpicName: Feature Title
+  const headingFormatRe = /^### Feature \d+ - .+:.+/gm;
+  const validHeadings = (content.match(headingFormatRe) ?? []).length;
+  if (featureCount > 0 && validHeadings < featureCount) {
+    const bad = featureCount - validHeadings;
+    warnings.push(
+      `${bad} feature heading(s) missing 'Epic: Title' format — use: ### Feature N - EpicName: Feature Title`
+    );
+  }
+
+  // Check C — Every feature listed in Delivery Preference (by exact heading text)
+  if (content.includes("## Delivery Preference")) {
+    const deliverySection = content.split(/^## Delivery Preference/m)[1] ?? "";
+    const featureTitles = [...content.matchAll(/^### (Feature \d+ - .+)/gm)].map((m) => m[1].trim());
+    const notListed = featureTitles.filter((t) => !deliverySection.includes(t));
+    if (notListed.length > 0) {
+      warnings.push(
+        `${notListed.length} feature(s) not listed in Delivery Preference: ${notListed.slice(0, 3).join("; ")}`
+      );
+    }
+  }
+
+  // Check D — ## Out of Scope section present (soft warning)
+  if (!content.includes("## Out of Scope")) {
+    warnings.push("Missing '## Out of Scope' section");
+  }
+
   return { valid: featureCount > 0, featureCount, warnings };
 }
 

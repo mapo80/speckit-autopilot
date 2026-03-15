@@ -127,6 +127,65 @@ describe("auditGenerate", () => {
     const result = auditGenerate(root);
     expect(result.warnings.some((w) => w.includes("missing acceptance criteria"))).toBe(true);
   });
+
+  // --- Check A: ## Vision ---
+
+  it("warns when ## Vision section is missing", () => {
+    const root = makeTmp(); dirs.push(root);
+    writeProductMd(root, `# My Product\n\n## In Scope\n\n### Feature 1 - Backend: Auth\n- login works\n### Feature 2 - Backend: Register\n- register works\n### Feature 3 - Frontend: Dashboard\n- dashboard shown\n### Feature 4 - Frontend: Settings\n- settings saved\n### Feature 5 - API: Health\n- GET /health 200\n\n## Out of Scope\n- OAuth\n\n## Delivery Preference\n1. Feature 1 - Backend: Auth\n2. Feature 2 - Backend: Register\n3. Feature 3 - Frontend: Dashboard\n4. Feature 4 - Frontend: Settings\n5. Feature 5 - API: Health\n`);
+    const result = auditGenerate(root);
+    expect(result.warnings.some((w) => w.includes("'## Vision'"))).toBe(true);
+  });
+
+  it("does not warn about Vision when section is present", () => {
+    const root = makeTmp(); dirs.push(root);
+    writeProductMd(root, VALID_PRODUCT_MD);
+    const result = auditGenerate(root);
+    expect(result.warnings.some((w) => w.includes("Vision"))).toBe(false);
+  });
+
+  // --- Check B: Feature heading format (Epic: Title required) ---
+
+  it("warns when feature headings lack 'Epic: Title' format", () => {
+    const root = makeTmp(); dirs.push(root);
+    // Headings like "### Feature 1 - Backend" (missing colon + title)
+    writeProductMd(root, `# My Product\n\n## Vision\nA product.\n\n## In Scope\n\n### Feature 1 - Backend\n- works\n### Feature 2 - Frontend\n- works\n### Feature 3 - Mobile\n- works\n### Feature 4 - API\n- works\n### Feature 5 - Admin\n- works\n\n## Out of Scope\n- OAuth\n\n## Delivery Preference\n1. Feature 1 - Backend\n`);
+    const result = auditGenerate(root);
+    expect(result.warnings.some((w) => w.includes("'Epic: Title' format"))).toBe(true);
+  });
+
+  it("does not warn about heading format when all headings are correct", () => {
+    const root = makeTmp(); dirs.push(root);
+    writeProductMd(root, VALID_PRODUCT_MD);
+    const result = auditGenerate(root);
+    expect(result.warnings.some((w) => w.includes("'Epic: Title' format"))).toBe(false);
+  });
+
+  // --- Check C: Delivery Preference must list every feature ---
+
+  it("warns when a feature is missing from Delivery Preference", () => {
+    const root = makeTmp(); dirs.push(root);
+    // Feature 5 - API: Healthcheck is NOT in Delivery Preference
+    writeProductMd(root, `# My Product\n\n## Vision\nA product.\n\n## In Scope\n\n### Feature 1 - Auth: Login\n- login\n### Feature 2 - Auth: Register\n- register\n### Feature 3 - Dashboard: Overview\n- overview\n### Feature 4 - Dashboard: Settings\n- settings\n### Feature 5 - API: Healthcheck\n- health\n\n## Out of Scope\n- OAuth\n\n## Delivery Preference\n1. Feature 1 - Auth: Login\n2. Feature 2 - Auth: Register\n3. Feature 3 - Dashboard: Overview\n4. Feature 4 - Dashboard: Settings\n`);
+    const result = auditGenerate(root);
+    expect(result.warnings.some((w) => w.includes("not listed in Delivery Preference"))).toBe(true);
+  });
+
+  it("does not warn about Delivery Preference when all features are listed", () => {
+    const root = makeTmp(); dirs.push(root);
+    writeProductMd(root, VALID_PRODUCT_MD);
+    const result = auditGenerate(root);
+    expect(result.warnings.some((w) => w.includes("not listed in Delivery Preference"))).toBe(false);
+  });
+
+  // --- Check D: ## Out of Scope ---
+
+  it("warns when ## Out of Scope section is missing", () => {
+    const root = makeTmp(); dirs.push(root);
+    writeProductMd(root, `# My Product\n\n## Vision\nA product.\n\n## In Scope\n\n### Feature 1 - Auth: Login\n- login\n### Feature 2 - Auth: Register\n- register\n### Feature 3 - Dashboard: Overview\n- overview\n### Feature 4 - Dashboard: Settings\n- settings\n### Feature 5 - API: Healthcheck\n- health\n\n## Delivery Preference\n1. Feature 1 - Auth: Login\n2. Feature 2 - Auth: Register\n3. Feature 3 - Dashboard: Overview\n4. Feature 4 - Dashboard: Settings\n5. Feature 5 - API: Healthcheck\n`);
+    const result = auditGenerate(root);
+    expect(result.warnings.some((w) => w.includes("'## Out of Scope'"))).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------
