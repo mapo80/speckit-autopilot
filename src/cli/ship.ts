@@ -93,7 +93,16 @@ export function makeDefaultPhaseRunner(apiKey?: string): PhaseRunner {
 
     // Dry-run: skip real AI calls
     if (dryRun) {
-      const phases: Phase[] = ["constitution", "spec", "clarify", "plan", "tasks", "analyze", "implement"];
+      const constitutionPath = join(root, ".speckit", "constitution.md");
+      const phases: Phase[] = [
+        ...(existsSync(constitutionPath) ? [] : (["constitution"] as Phase[])),
+        "spec",
+        "clarify",
+        "plan",
+        "tasks",
+        "analyze",
+        "implement",
+      ];
       const startIdx = startFromPhase ? phases.indexOf(startFromPhase) : 0;
       const activePhases = startIdx >= 0 ? phases.slice(startIdx) : phases;
       const lastPhase: Phase = activePhases[activePhases.length - 1] ?? "implement";
@@ -269,6 +278,7 @@ async function runOneFeature(opts: RunOneFeatureOpts): Promise<RunOneResult> {
     state = store.update({
       consecutiveFailures: failures,
       lastError: gateResult.summary,
+      currentPhase: "spec",
     });
     backlog = markFeatureStatus(backlog, feature.id, "open");
     writeBacklog(root, backlog);
@@ -454,7 +464,8 @@ export async function ship(opts: ShipOptions): Promise<ShipResult> {
   // -------------------------------------------------------------------------
 
   // Reset any features stuck in_progress from a previous interrupted run
-  const hadStuck = backlog.features.some((f) => f.status === "in_progress");
+  const stuckFeatures = backlog.features.filter((f) => f.status === "in_progress");
+  const hadStuck = stuckFeatures.length > 0;
   if (hadStuck) {
     backlog = {
       ...backlog,
@@ -463,6 +474,10 @@ export async function ship(opts: ShipOptions): Promise<ShipResult> {
       ),
     };
     writeBacklog(root, backlog);
+    appendToIterationLog(
+      root,
+      `\n## STUCK RESET – ${new Date().toISOString()}\nReset in_progress → open: ${stuckFeatures.map((f) => f.id).join(", ")}\n`
+    );
   }
 
   const result: ShipResult = {

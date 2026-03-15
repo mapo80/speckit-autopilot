@@ -57,6 +57,7 @@ export const AutopilotStateSchema = z.object({
   lastError: z.string().nullable().default(null),
   consecutiveFailures: z.number().int().min(0).default(0),
   maxFailures: z.number().int().min(1).default(3),
+  testTimeoutMs: z.number().int().min(1000).default(120_000),
   lastCoverage: z.string().nullable().default(null),
   lastTestRun: z.string().nullable().default(null),
   lastLintPassed: z.boolean().nullable().default(null),

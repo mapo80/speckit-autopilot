@@ -95,31 +95,34 @@ snapshot and uses it as context in all implementation phases.
   │  ship [--feature F-001]                          │
   └──────────┬───────────────────────────────────────┘
                                │
-             │  ┌──────────────────────────────────────────────────────┐
-             │  │  For each open feature (dependency order):           │
-             │  │                                                      │
-             │  │  If docs/brownfield-snapshot.md exists:              │
-             │  │    → codebase context injected into every prompt     │
-             │  │                                                      │
-             │  │   spec → clarify → plan → tasks → analyze           │
-             │  │                                  │                  │
-             │  │                             implement               │
-             │  │                                  │                  │
-             │  │                            QA gate                  │
-             │  │                     (lint / tests / cov)            │
-             │  │                                  │                  │
-             │  │                  pass ◄──────────┴──────► fail      │
-             │  │                    │                      │         │
-             │  │                mark done           retry (3x)       │
-             │  │                    │               then block       │
-             │  │                    │                                │
-             │  │      ┌─────────────────────────────────────────┐   │
-             │  │      │ AUDIT [AI]: per-feature review           │   │
-             │  │      │  - spec.md vs implementation files       │   │
-             │  │      │  - 1 Claude call → docs/specs/{id}/      │   │
-             │  │      │    audit.md (informational, non-blocking)│   │
-             │  │      └─────────────────────────────────────────┘   │
-             │  └────────────────────────────────────────────────────┘
+             │  ╔══════════════════════════════════════════════════════╗
+             │  ║  For each open feature (priority + dependency order) ║
+             │  ║                                                      ║
+             │  ║  If brownfield-snapshot.md exists:                   ║
+             │  ║    → codebase context injected into every prompt     ║
+             │  ║                                                      ║
+             │  ║  [constitution] only if .speckit/constitution.md     ║
+             │  ║    is MISSING → create project governance doc        ║
+             │  ║                                                      ║
+             │  ║  [spec]       → docs/specs/{id}/spec.md              ║
+             │  ║  [clarify]    → appends ## Clarifications to spec.md ║
+             │  ║  [plan]       → docs/specs/{id}/plan.md              ║
+             │  ║  [tasks]      → docs/specs/{id}/tasks.md             ║
+             │  ║  [analyze]    → docs/specs/{id}/analysis-report.md   ║
+             │  ║                 (non-blocking, informational)        ║
+             │  ║  [implement]  → src/ files via <<<FILE:>>> blocks    ║
+             │  ║                 all phases use: AC + SpecKit         ║
+             │  ║                 instructions + brownfield snapshot   ║
+             │  ║                                                      ║
+             │  ║  ┌──────────── QA gate ─────────────────────────┐   ║
+             │  ║  │ lint / tests / coverage / acceptance criteria │   ║
+             │  ║  └───────────────┬──────────────────┬───────────┘   ║
+             │  ║                  │ PASS              │ FAIL          ║
+             │  ║                  ▼                   ▼               ║
+             │  ║           mark done          reopen → "open"        ║
+             │  ║           [AUDIT AI]         currentPhase → "spec"  ║
+             │  ║           write impl report  failures++ (3x→block)  ║
+             │  ╚══════════════════════════════════════════════════════╝
              ▼
   All features done
              │
@@ -137,6 +140,115 @@ snapshot and uses it as context in all implementation phases.
 ```bash
 node run.mjs all --root /path/to/project --spec /path/to/spec.md
 ```
+
+---
+
+### Ship Workflow — Phase Detail
+
+Each feature is executed through up to 7 ordered phases driven by Claude CLI:
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                    SHIP WORKFLOW — PER-FEATURE PHASE DETAIL                  │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+  node run.mjs ship [--feature F-001]
+         │
+         ▼
+  [1] Backlog check ── product-backlog.yaml missing?
+         │               → error: run generate + bootstrap first
+         ▼
+  [2] Mode detection
+         │  src/ exists + package.json/deps? → brownfield
+         │  otherwise                        → greenfield
+         ▼
+  [3] Brownfield? → write docs/brownfield-snapshot.md
+         │          (codebase analysis for context injection)
+         ▼
+  [4] Feature selection
+         │  --feature given  → resolve by ID or title substring
+         │  no --feature     → reset stuck in_progress → open
+         │                     pick next by priority + deps order
+         │                     check consecutiveFailures >= maxFailures → block
+         ▼
+  ╔═══════════════════════════════════════════════════════════════════════════╗
+  ║                    PER-FEATURE EXECUTION                                 ║
+  ╠═══════════════════════════════════════════════════════════════════════════╣
+  ║                                                                          ║
+  ║  mark feature status: in_progress                                        ║
+  ║                                                                          ║
+  ║  Phase 1: [constitution]  ← ONLY if .speckit/constitution.md is MISSING  ║
+  ║    Input:  tech-stack.md + constitution-template.md (if present)         ║
+  ║    Output: .speckit/constitution.md                                      ║
+  ║    Effect: defines coding standards, patterns, naming conventions        ║
+  ║                                                                          ║
+  ║  Phase 2: [spec]                                                         ║
+  ║    Input:  feature title + acceptance criteria + tech-stack              ║
+  ║            + brownfield snapshot + speckit.specify.md instructions       ║
+  ║    Output: docs/specs/{id}/spec.md                                       ║
+  ║    Effect: user stories, requirements, success criteria                  ║
+  ║                                                                          ║
+  ║  Phase 3: [clarify]                                                      ║
+  ║    Input:  docs/specs/{id}/spec.md                                       ║
+  ║    Output: docs/specs/{id}/spec.md (updated — ## Clarifications appended)║
+  ║    Effect: auto-resolves ambiguities before planning begins              ║
+  ║                                                                          ║
+  ║  Phase 4: [plan]                                                         ║
+  ║    Input:  spec.md + acceptance criteria + tech-stack                    ║
+  ║            + brownfield snapshot + speckit.plan.md instructions          ║
+  ║    Output: docs/specs/{id}/plan.md                                       ║
+  ║    Effect: architecture, components, file paths, API design              ║
+  ║                                                                          ║
+  ║  Phase 5: [tasks]                                                        ║
+  ║    Input:  spec.md + plan.md + acceptance criteria + tech-stack          ║
+  ║            + brownfield snapshot + speckit.tasks.md instructions         ║
+  ║    Output: docs/specs/{id}/tasks.md                                      ║
+  ║    Effect: atomic checklist — each task has an exact file path           ║
+  ║                                                                          ║
+  ║  Phase 6: [analyze]                                                      ║
+  ║    Input:  spec.md + plan.md + tasks.md                                  ║
+  ║    Output: docs/specs/{id}/analysis-report.md                            ║
+  ║    Effect: cross-check consistency; finds gaps (non-blocking)            ║
+  ║                                                                          ║
+  ║  Phase 7: [implement]                                                    ║
+  ║    Input:  spec.md + plan.md + tasks.md + acceptance criteria            ║
+  ║            + brownfield snapshot + speckit.implement.md instructions     ║
+  ║    Output: source files via <<<FILE: path>>> blocks                      ║
+  ║    Effect: complete, runnable source code written to src/                ║
+  ║                                                                          ║
+  ║  ┌────────────────────────── QA gate ─────────────────────────────────┐  ║
+  ║  │  lint          npm run lint     → skipped if no package.json       │  ║
+  ║  │  tests         npm test         → skipped if no package.json       │  ║
+  ║  │  coverage      >= minCoverage   → skipped if threshold not set     │  ║
+  ║  │  criteria      all AC items     → skipped if none defined          │  ║
+  ║  │  timeout       configurable via state.testTimeoutMs (default 2min) │  ║
+  ║  └─────────────────────┬──────────────────────────┬───────────────────┘  ║
+  ║                        │ PASS                     │ FAIL                  ║
+  ║                        ▼                          ▼                       ║
+  ║               mark status: done          reopen → status: open           ║
+  ║               write impl report          currentPhase → "spec"           ║
+  ║               [AUDIT AI] spec vs files   consecutiveFailures++           ║
+  ║               log: DONE                  log: QA FAIL                    ║
+  ║               reset consecutiveFailures  if >= maxFailures (default 3):  ║
+  ║                                            → mark status: blocked        ║
+  ╚═══════════════════════════════════════════════════════════════════════════╝
+         │
+         ▼  (loop: pick next open feature)
+  All done / no_open_features / blocked / empty_backlog
+```
+
+**Phase resume**: if a previous run was interrupted mid-phase, `ship` and `resume-loop` pick up from the last incomplete phase (`state.currentPhase`). Constitution is skipped on resume if `.speckit/constitution.md` already exists.
+
+| Phase | Output file | Blocks on failure? | Notes |
+|-------|-------------|--------------------|-------|
+| constitution | `.speckit/constitution.md` | Yes | Skipped if file exists |
+| spec | `docs/specs/{id}/spec.md` | Yes | |
+| clarify | `docs/specs/{id}/spec.md` (append) | No (skip if spec missing) | |
+| plan | `docs/specs/{id}/plan.md` | Yes | Requires spec.md |
+| tasks | `docs/specs/{id}/tasks.md` | Yes | |
+| analyze | `docs/specs/{id}/analysis-report.md` | No (informational) | |
+| implement | `src/**` | Yes | Requires `<<<FILE:>>>` blocks |
+| qa gate | — | Yes | Lint + tests + coverage + AC |
 
 ---
 

@@ -293,7 +293,7 @@ export function myFeature() { return true; }
     expect(existsSync(join(tmp, "src", "features", "f-001", "index.ts"))).toBe(true);
   });
 
-  it("generates fallback stub when AI returns no FILE markers", async () => {
+  it("throws when AI returns no FILE markers", async () => {
     const specsDir = join(tmp, "docs", "specs", "f-001");
     mkdirSync(specsDir, { recursive: true });
     writeFileSync(join(specsDir, "spec.md"), "# Spec", "utf8");
@@ -301,18 +301,19 @@ export function myFeature() { return true; }
     writeFileSync(join(specsDir, "tasks.md"), "# Tasks", "utf8");
 
     const runner = makeRunner(tmp, ["The implementation should create some files."]);
-    const written = await runner.runImplement("F-001", "My Feature");
-
-    expect(written.length).toBeGreaterThan(0);
-    expect(existsSync(join(tmp, "src", "features", "f-001", "index.ts"))).toBe(true);
+    await expect(runner.runImplement("F-001", "My Feature")).rejects.toThrow(/No source files generated/);
   });
 
   it("runPhases returns success:true when all phases pass", async () => {
     const implementResponse = `<<<FILE: src/features/f-001/index.ts>>>\nexport const x = 1;\n<<<END_FILE>>>`;
+    // startFromPhase="spec" → active: spec, clarify, plan, tasks, analyze, implement (6 calls)
+    // constitution is skipped because startIdx points to "spec"
     const runner = makeRunner(tmp, [
       "# Feature Specification: Test\nSpec content.",
+      "Clarifications: none needed.",
       "# Implementation Plan: Test\nPlan content.",
       "# Tasks: Test\n- [ ] T001 Create index.ts",
+      "# Analysis Report\nAll consistent.",
       implementResponse,
     ]);
 
@@ -343,9 +344,11 @@ export function myFeature() { return true; }
     writeFileSync(join(specsDir, "spec.md"), "# Existing Spec", "utf8");
 
     const implementResponse = `<<<FILE: src/features/f-002/index.ts>>>\nexport const y = 2;\n<<<END_FILE>>>`;
+    // startFromPhase="plan" → active: plan, tasks, analyze, implement (4 calls)
     const runner = makeRunner(tmp, [
       "# Plan\nPlan content.",
       "# Tasks\n- [ ] T001 Create src/features/f-002/index.ts",
+      "# Analysis Report\nAll consistent.",
       implementResponse,
     ]);
 
@@ -389,7 +392,7 @@ describe("ensureSpecKitInitialized paths", () => {
 // fallback implementation code-hint branch
 // ---------------------------------------------------------------------------
 
-describe("fallback implementation code-hint branch", () => {
+describe("runImplement – no FILE markers throws error", () => {
   let tmp: string;
   beforeEach(() => {
     tmp = makeTmp();
@@ -398,21 +401,15 @@ describe("fallback implementation code-hint branch", () => {
   });
   afterEach(() => rmSync(tmp, { recursive: true, force: true }));
 
-  it("uses code hint from AI response when it is long enough", async () => {
+  it("throws with clear message when AI response has no FILE blocks", async () => {
     const specsDir = join(tmp, "docs", "specs", "f-hint");
     mkdirSync(specsDir, { recursive: true });
     writeFileSync(join(specsDir, "spec.md"), "# Spec", "utf8");
     writeFileSync(join(specsDir, "plan.md"), "# Plan", "utf8");
     writeFileSync(join(specsDir, "tasks.md"), "# Tasks", "utf8");
 
-    const longCodeHint = "export function myHintedFeature() {\n  return { implemented: true, value: 42 };\n}\n";
-    const runner = makeRunner(tmp, ["```typescript\n" + longCodeHint + "```"]);
-
-    const written = await runner.runImplement("F-hint", "Hint Feature");
-    expect(written.length).toBeGreaterThan(0);
-    const { readFileSync: rfs } = await import("fs");
-    const content = rfs(written[0], "utf8");
-    expect(content).toContain("myHintedFeature");
+    const runner = makeRunner(tmp, ["Some narrative response without file blocks."]);
+    await expect(runner.runImplement("F-hint", "Hint Feature")).rejects.toThrow(/No source files generated/);
   });
 });
 

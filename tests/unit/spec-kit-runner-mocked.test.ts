@@ -221,6 +221,9 @@ describe("SpecKitRunner – CLI mode via claude --print", () => {
   function setupCliMock(responses: string[]): void {
     // Constructor check uses spawnSync for --version
     mockSpawnSync.mockReturnValueOnce({ status: 0, stdout: "claude 1.0.0", stderr: "" });
+    // runImplement uses spawnSync for git diff + git ls-files (both return empty = no git-tracked new files)
+    mockSpawnSync.mockReturnValueOnce({ status: 0, stdout: "", stderr: "" });
+    mockSpawnSync.mockReturnValueOnce({ status: 0, stdout: "", stderr: "" });
     // Phase calls use async spawn
     for (const response of responses) {
       pushSpawnResponse(response, 0);
@@ -274,10 +277,12 @@ describe("SpecKitRunner – CLI mode via claude --print", () => {
     await expect(runner.runSpec("F-001", "Task CRUD", [])).rejects.toThrow(/empty response/);
   });
 
-  it("runs all phases (spec→plan→tasks→implement) via CLI and writes files", async () => {
+  it("runs all phases (spec→clarify→plan→tasks→analyze→implement) via CLI and writes files", async () => {
     const specResponse = "# Feature Specification: Task CRUD\n\nUsers can create and manage tasks.";
+    const clarifyResponse = "Clarifications: All terms are clear.";
     const planResponse = "# Implementation Plan: Task CRUD\n\n## Summary\nBuild CRUD operations.";
     const tasksResponse = "# Tasks: Task CRUD\n\n- [ ] T001 Create src/features/f-001/index.ts";
+    const analyzeResponse = "# Analysis Report\nSpec, plan, and tasks are consistent.";
     const implementResponse = `Here is the implementation:
 
 <<<FILE: src/features/f-001/index.ts>>>
@@ -285,7 +290,8 @@ export interface Task { id: string; title: string; }
 export function createTask(title: string): Task { return { id: Date.now().toString(), title }; }
 <<<END_FILE>>>`;
 
-    setupCliMock([specResponse, planResponse, tasksResponse, implementResponse]);
+    // startFromPhase="spec" → spec, clarify, plan, tasks, analyze, implement = 6 calls
+    setupCliMock([specResponse, clarifyResponse, planResponse, tasksResponse, analyzeResponse, implementResponse]);
 
     const runner = new SpecKitRunner(tmp);
     const result = await runner.runPhases("F-001", "Task CRUD", ["Must support CRUD"], "spec");

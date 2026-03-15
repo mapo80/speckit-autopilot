@@ -92,7 +92,7 @@ function runLintCheck(root: string): GateCheckResult {
 // Test check
 // ---------------------------------------------------------------------------
 
-function runTestCheck(root: string, withCoverage: boolean): { check: GateCheckResult; coverage: number | null } {
+function runTestCheck(root: string, withCoverage: boolean, timeoutMs = 120_000): { check: GateCheckResult; coverage: number | null } {
   if (!existsSync(join(root, "package.json"))) {
     return {
       check: { name: "tests", passed: true, details: "skipped: no package.json found" },
@@ -104,7 +104,7 @@ function runTestCheck(root: string, withCoverage: boolean): { check: GateCheckRe
   const cmd = withCoverage ? `${baseCmd} --coverage` : baseCmd;
 
   const [prog, ...args] = cmd.split(" ");
-  const result = spawnSync(prog, args, { cwd: root, encoding: "utf8", shell: true, timeout: 120_000 });
+  const result = spawnSync(prog, args, { cwd: root, encoding: "utf8", shell: true, timeout: timeoutMs });
   const output = (result.stdout ?? "") + (result.stderr ?? "");
   const passed = result.status === 0;
   const coverage = withCoverage ? extractCoveragePercent(output) : null;
@@ -188,7 +188,7 @@ export function runAcceptanceGate(root: string, state: AutopilotState): GateResu
   // Tests + coverage
   if (criteria.requireTestsPass !== false) {
     const hasCoverageThreshold = criteria.minCoverage != null;
-    const { check, coverage: cov } = runTestCheck(root, hasCoverageThreshold);
+    const { check, coverage: cov } = runTestCheck(root, hasCoverageThreshold, state.testTimeoutMs);
     checks.push(check);
     coverage = cov;
 

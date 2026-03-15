@@ -130,30 +130,34 @@ function buildSnapshotBlock(snapshotContent: string | null): string {
   return `\nCODEBASE CONTEXT (existing code — integrate with this):\n${snapshotContent}\n`;
 }
 
+function buildCriteriaBlock(acceptanceCriteria: string[]): string {
+  if (acceptanceCriteria.length === 0) return "";
+  return `\n## Acceptance Criteria (must all be satisfied)\n${acceptanceCriteria.map((c) => `- ${c}`).join("\n")}\n`;
+}
+
+function buildCommandBlock(commandContent: string | null): string {
+  if (!commandContent) return "";
+  return `\n## SpecKit Instructions\n${commandContent}\n`;
+}
+
 function buildSpecPrompt(
-  _commandContent: string,
+  commandContent: string | null,
   featureTitle: string,
   acceptanceCriteria: string[],
   specTemplate: string | null,
   techStack: string,
   snapshotContent: string | null = null
 ): string {
-  const criteriaBlock =
-    acceptanceCriteria.length > 0
-      ? `Acceptance Criteria:\n${acceptanceCriteria.map((c) => `- ${c}`).join("\n")}`
-      : "";
-
   return `You are an expert software analyst. Output ONLY a Markdown specification document. Do NOT use any tools.
 
 FEATURE: ${featureTitle}
-${criteriaBlock}
-
+${buildCriteriaBlock(acceptanceCriteria)}
 TECH STACK:
 ${techStack}
 ${buildSnapshotBlock(snapshotContent)}
 SPEC TEMPLATE:
 ${specTemplate ?? "Use sections: User Scenarios, Requirements, Success Criteria"}
-
+${buildCommandBlock(commandContent)}
 Generate a complete feature specification for "${featureTitle}" targeting the tech stack above.
 Start with: # Feature Specification: ${featureTitle}
 Include at least 2 user stories. Focus on WHAT, not HOW. No code.
@@ -162,17 +166,18 @@ Output the specification document now.`;
 }
 
 function buildPlanPrompt(
-  _commandContent: string,
+  commandContent: string | null,
   featureTitle: string,
   specContent: string,
   planTemplate: string | null,
   techStack: string,
-  snapshotContent: string | null = null
+  snapshotContent: string | null = null,
+  acceptanceCriteria: string[] = []
 ): string {
   return `You are an expert software architect. Output ONLY a Markdown plan document. Do NOT use any tools.
 
 FEATURE: ${featureTitle}
-
+${buildCriteriaBlock(acceptanceCriteria)}
 TECH STACK:
 ${techStack}
 ${buildSnapshotBlock(snapshotContent)}
@@ -181,7 +186,7 @@ ${specContent}
 
 PLAN TEMPLATE:
 ${planTemplate ?? "Sections: Summary, Technical Context, Project Structure, Phases"}
-
+${buildCommandBlock(commandContent)}
 Generate an implementation plan for "${featureTitle}" using the tech stack above.
 Start with: # Implementation Plan: ${featureTitle}
 Include exact file paths matching the tech stack conventions. No code, just the plan.
@@ -190,19 +195,20 @@ Output the plan document now.`;
 }
 
 function buildTasksPrompt(
-  _commandContent: string,
+  commandContent: string | null,
   featureTitle: string,
   featureId: string,
   specContent: string,
   planContent: string,
   techStack: string,
-  snapshotContent: string | null = null
+  snapshotContent: string | null = null,
+  acceptanceCriteria: string[] = []
 ): string {
   return `You are an expert software engineer. Output ONLY a Markdown task list. Do NOT use any tools.
 
 FEATURE: ${featureTitle}
 FEATURE ID: ${featureId}
-
+${buildCriteriaBlock(acceptanceCriteria)}
 TECH STACK:
 ${techStack}
 ${buildSnapshotBlock(snapshotContent)}
@@ -211,7 +217,7 @@ ${specContent}
 
 PLAN:
 ${planContent}
-
+${buildCommandBlock(commandContent)}
 Generate a tasks.md for "${featureTitle}".
 Start with: # Tasks: ${featureTitle}
 Each task format: - [ ] T001 Description (file: <path appropriate for the tech stack above>)
@@ -221,17 +227,18 @@ Output the tasks document now.`;
 }
 
 function buildImplementPrompt(
-  _commandContent: string,
+  commandContent: string | null,
   featureTitle: string,
   featureId: string,
   specContent: string,
   planContent: string,
   tasksContent: string,
-  techStack: string
+  techStack: string,
+  snapshotContent: string | null = null,
+  acceptanceCriteria: string[] = []
 ): string {
-  // NOTE: we intentionally do NOT include the speckit.implement.md command
-  // instructions here, because those instruct claude to use file-writing tools.
-  // We need plain text output only — we write the files ourselves.
+  // NOTE: we do NOT ask claude to use file-writing tools here — we need plain
+  // text output only (<<<FILE:>>> blocks) and write the files ourselves.
   return `You are an expert developer. Your job is to produce source code as plain text output ONLY.
 
 IMPORTANT CONSTRAINTS:
@@ -241,10 +248,10 @@ IMPORTANT CONSTRAINTS:
 
 FEATURE: ${featureTitle}
 FEATURE ID: ${featureId}
-
+${buildCriteriaBlock(acceptanceCriteria)}
 TECH STACK:
 ${techStack}
-
+${buildSnapshotBlock(snapshotContent)}
 SPECIFICATION:
 ${specContent}
 
@@ -253,7 +260,7 @@ ${planContent}
 
 TASKS:
 ${tasksContent}
-
+${buildCommandBlock(commandContent)}
 YOUR TASK:
 Generate complete, working source files for "${featureTitle}" using the tech stack above.
 
@@ -267,7 +274,7 @@ Requirements:
 2. File paths must match the conventions in the tech stack
 3. All code must be complete and runnable — no pseudocode
 4. Export all public types and functions
-5. Implement every acceptance criterion from the spec
+5. Implement every acceptance criterion listed above
 
 Output the files now using the <<<FILE:>>> format above. Nothing else.`;
 }
@@ -285,7 +292,7 @@ export function extractGeneratedFiles(aiResponse: string): GeneratedFile[] {
   const files: GeneratedFile[] = [];
 
   // Match <<<FILE: path>>> ... <<<END_FILE>>> blocks
-  const filePattern = /<<<FILE:\s*([^\n>]+)>>>\n([\s\S]*?)<<<END_FILE>>>/g;
+  const filePattern = /<<<FILE:\s*([^\n>]+)>>>\r?\n([\s\S]*?)<<<END_FILE>>>/g;
   let match;
   while ((match = filePattern.exec(aiResponse)) !== null) {
     const filePath = match[1].trim();
@@ -459,6 +466,13 @@ export class SpecKitRunner {
     // Pipe prompt via stdin to avoid shell-escaping issues with large prompts.
     const env = { ...process.env, PATH: augmentedPath() };
     return new Promise((resolve, reject) => {
+      let settled = false;
+      const settle = (fn: () => void) => {
+        if (settled) return;
+        settled = true;
+        fn();
+      };
+
       const proc = spawn(this.claudePath, ["--print", "--dangerously-skip-permissions"], {
         shell: false,
         env,
@@ -477,23 +491,23 @@ export class SpecKitRunner {
       // Hard ceiling: 25 minutes per phase
       const timer = setTimeout(() => {
         proc.kill();
-        reject(new Error("claude CLI timed out after 25 minutes"));
+        settle(() => reject(new Error("claude CLI timed out after 25 minutes")));
       }, 1_500_000);
 
       proc.on("close", (code: number | null) => {
         clearTimeout(timer);
         if (code !== 0) {
-          reject(new Error(`claude CLI failed (exit ${code}): ${stderr.slice(0, 500)}`));
+          settle(() => reject(new Error(`claude CLI failed (exit ${code}): ${stderr.slice(0, 500)}`)));
         } else if (!stdout.trim()) {
-          reject(new Error(`claude CLI returned empty response (stderr: ${stderr.slice(0, 300)})`));
+          settle(() => reject(new Error(`claude CLI returned empty response (stderr: ${stderr.slice(0, 300)})`)));
         } else {
-          resolve(stdout.trim());
+          settle(() => resolve(stdout.trim()));
         }
       });
 
       proc.on("error", (err: Error) => {
         clearTimeout(timer);
-        reject(new Error(`claude CLI error: ${err.message}`));
+        settle(() => reject(new Error(`claude CLI error: ${err.message}`)));
       });
     });
   }
@@ -514,17 +528,82 @@ export class SpecKitRunner {
     return specPath;
   }
 
-  // Phase: plan
-  async runPlan(featureId: string, featureTitle: string): Promise<string> {
+  // Phase: constitution (only if .speckit/constitution.md is missing)
+  async runConstitution(featureId: string, featureTitle: string): Promise<string | null> {
+    const constitutionPath = join(this.root, ".speckit", "constitution.md");
+    if (existsSync(constitutionPath)) return null; // already exists — skip
+
+    const commandContent =
+      readCommandFile(this.root, "speckit.constitution") ??
+      "Create a project constitution that defines coding standards, architectural patterns, and governance rules.";
+    const template = readTemplateFile(this.root, "constitution-template.md");
+
+    const techBlock = this.techStack ? `\n## Tech Stack\n${this.techStack}\n` : "";
+    const templateBlock = template ? `\n## Template\n${template}\n` : "";
+    const prompt = `${commandContent}\n\nGenerate a constitution.md for this project.\nFeature context: ${featureTitle} (${featureId})${techBlock}${templateBlock}\n\nWrite the constitution in Markdown format covering: coding standards, architectural patterns, naming conventions, testing requirements, and governance rules.`;
+
+    const response = await this.callClaude(prompt);
+    writeArtifact(constitutionPath, response);
+    return constitutionPath;
+  }
+
+  // Phase: clarify (auto-clarify pass on spec.md)
+  async runClarify(featureId: string, featureTitle: string): Promise<string | null> {
     const specsDir = this.specsDir(featureId);
-    const specContent = readArtifact(join(specsDir, "spec.md")) ?? `Feature: ${featureTitle}`;
+    const specPath = join(specsDir, "spec.md");
+    const specContent = readArtifact(specPath);
+    if (!specContent) return null; // no spec to clarify — skip silently
+
+    const commandContent =
+      readCommandFile(this.root, "speckit.clarify") ??
+      "Identify and resolve ambiguities in the feature specification.";
+
+    const prompt = `${commandContent}\n\nAnalyse the following spec for ambiguities (vague terms, undefined thresholds, open decisions). For each ambiguity found, provide a definitive answer based on the tech stack and feature context. Append your answers as a ## Clarifications section.\n\nFeature: ${featureTitle} (${featureId})\n\n## Spec\n${specContent}`;
+
+    const response = await this.callClaude(prompt);
+    const clarificationsBlock = `\n\n## Clarifications\n${response.replace(/^##\s*Clarifications\s*/i, "").trim()}\n`;
+    const updated = specContent.includes("## Clarifications")
+      ? specContent
+      : specContent + clarificationsBlock;
+    writeArtifact(specPath, updated);
+    return specPath;
+  }
+
+  // Phase: analyze (spec × plan × tasks consistency report)
+  async runAnalyze(featureId: string, featureTitle: string): Promise<string | null> {
+    const specsDir = this.specsDir(featureId);
+    const specContent = readArtifact(join(specsDir, "spec.md"));
+    const planContent = readArtifact(join(specsDir, "plan.md"));
+    const tasksContent = readArtifact(join(specsDir, "tasks.md"));
+
+    if (!specContent && !planContent && !tasksContent) return null; // nothing to analyze
+
+    const commandContent =
+      readCommandFile(this.root, "speckit.analyze") ??
+      "Validate consistency between spec, plan, and tasks documents.";
+
+    const prompt = `${commandContent}\n\nValidate consistency across the following documents for feature "${featureTitle}" (${featureId}). Identify: requirements without tasks, tasks without corresponding requirements, contradictions, and coverage gaps. Format as a Markdown report.\n\n## Spec\n${specContent ?? "(missing)"}\n\n## Plan\n${planContent ?? "(missing)"}\n\n## Tasks\n${tasksContent ?? "(missing)"}`;
+
+    const response = await this.callClaude(prompt);
+    const reportPath = join(specsDir, "analysis-report.md");
+    writeArtifact(reportPath, response);
+    return reportPath;
+  }
+
+  // Phase: plan
+  async runPlan(featureId: string, featureTitle: string, acceptanceCriteria: string[] = []): Promise<string> {
+    const specsDir = this.specsDir(featureId);
+    const specContent = readArtifact(join(specsDir, "spec.md"));
+    if (!specContent) {
+      throw new Error(`spec.md not found for "${featureTitle}" (${featureId}) — run spec phase first`);
+    }
 
     const commandContent =
       readCommandFile(this.root, "speckit.plan") ??
       "Create an implementation plan with Technical Context and Project Structure.";
     const planTemplate = readTemplateFile(this.root, "plan-template.md");
 
-    const prompt = buildPlanPrompt(commandContent, featureTitle, specContent, planTemplate, this.techStack, this.snapshotContent);
+    const prompt = buildPlanPrompt(commandContent, featureTitle, specContent, planTemplate, this.techStack, this.snapshotContent, acceptanceCriteria);
     const response = await this.callClaude(prompt);
 
     const planPath = join(specsDir, "plan.md");
@@ -533,7 +612,7 @@ export class SpecKitRunner {
   }
 
   // Phase: tasks
-  async runTasks(featureId: string, featureTitle: string): Promise<string> {
+  async runTasks(featureId: string, featureTitle: string, acceptanceCriteria: string[] = []): Promise<string> {
     const specsDir = this.specsDir(featureId);
     const specContent = readArtifact(join(specsDir, "spec.md")) ?? `Feature: ${featureTitle}`;
     const planContent = readArtifact(join(specsDir, "plan.md")) ?? `Plan for: ${featureTitle}`;
@@ -542,7 +621,7 @@ export class SpecKitRunner {
       readCommandFile(this.root, "speckit.tasks") ??
       "Generate actionable tasks with file paths for implementation.";
 
-    const prompt = buildTasksPrompt(commandContent, featureTitle, featureId, specContent, planContent, this.techStack, this.snapshotContent);
+    const prompt = buildTasksPrompt(commandContent, featureTitle, featureId, specContent, planContent, this.techStack, this.snapshotContent, acceptanceCriteria);
     const response = await this.callClaude(prompt);
 
     const tasksPath = join(specsDir, "tasks.md");
@@ -551,7 +630,7 @@ export class SpecKitRunner {
   }
 
   // Phase: implement
-  async runImplement(featureId: string, featureTitle: string): Promise<string[]> {
+  async runImplement(featureId: string, featureTitle: string, acceptanceCriteria: string[] = []): Promise<string[]> {
     const specsDir = this.specsDir(featureId);
     // Truncate large artifacts to avoid exceeding claude CLI prompt limits.
     // Keep the most actionable content: full tasks list (usually short) +
@@ -573,36 +652,55 @@ export class SpecKitRunner {
       specContent,
       planContent,
       tasksContent,
-      this.techStack
+      this.techStack,
+      this.snapshotContent,
+      acceptanceCriteria
     );
     const response = await this.callClaude(prompt);
 
-    const featureDir = join(this.root, "src", "features", featureId.toLowerCase());
-
     // With --dangerously-skip-permissions, claude may write files directly via
-    // tool_use. Check what landed on disk first.
+    // tool_use. Detect ONLY newly written/modified files using git to avoid
+    // returning pre-existing brownfield files as if they were just generated.
     const { spawnSync: sp } = await import("child_process");
-    const found = sp("find", [this.root + "/src", "-name", "*.ts", "-not", "-name", "*.d.ts"], {
-      encoding: "utf8",
-      shell: false,
+
+    // git diff --name-only HEAD: staged + unstaged changes since last commit
+    const gitDiff = sp("git", ["diff", "--name-only", "HEAD"], {
+      cwd: this.root, encoding: "utf8", shell: false, timeout: 10_000,
     });
-    const filesOnDisk = (found?.stdout ?? "").trim().split("\n").filter(Boolean);
-    if (filesOnDisk.length > 0) {
-      return filesOnDisk;
+    // git ls-files --others --exclude-standard src/: untracked new files
+    const gitNew = sp("git", ["ls-files", "--others", "--exclude-standard", "src/"], {
+      cwd: this.root, encoding: "utf8", shell: false, timeout: 10_000,
+    });
+    const newOnDisk = [
+      ...(gitDiff.stdout ?? "").trim().split("\n").filter(Boolean),
+      ...(gitNew.stdout ?? "").trim().split("\n").filter(Boolean),
+    ].filter(
+      (f) =>
+        (f.endsWith(".ts") || f.endsWith(".js") || f.endsWith(".py") || f.endsWith(".cs") ||
+         f.endsWith(".go") || f.endsWith(".dart") || f.endsWith(".java")) &&
+        !f.endsWith(".d.ts") &&
+        !f.endsWith(".test.ts") &&
+        !f.endsWith(".spec.ts") &&
+        !f.includes("/specs/")
+    );
+    if (newOnDisk.length > 0) {
+      return newOnDisk.map((f) => join(this.root, f));
     }
 
-    // Nothing written — extract <<<FILE:>>> blocks from text response, or stub
+    // Nothing written by tool_use — extract <<<FILE:>>> blocks from text response
     const generatedFiles = extractGeneratedFiles(response);
+    if (generatedFiles.length === 0) {
+      throw new Error(
+        `No source files generated for "${featureTitle}" (${featureId}). ` +
+        `Claude did not produce any <<<FILE: path>>> blocks. ` +
+        `Check the prompt and try again.`
+      );
+    }
     const writtenPaths: string[] = [];
     for (const file of generatedFiles) {
       const fullPath = join(this.root, file.path);
       writeArtifact(fullPath, file.content);
       writtenPaths.push(fullPath);
-    }
-    if (writtenPaths.length === 0) {
-      const indexPath = join(featureDir, "index.ts");
-      writeArtifact(indexPath, generateFallbackImplementation(featureTitle, featureId, response));
-      writtenPaths.push(indexPath);
     }
     return writtenPaths;
   }
@@ -614,8 +712,22 @@ export class SpecKitRunner {
     acceptanceCriteria: string[],
     startFromPhase: Phase = "spec"
   ): Promise<PhaseRunResult> {
-    const phases: Phase[] = ["spec", "plan", "tasks", "implement"];
+    // constitution is only run when .speckit/constitution.md is missing
+    const constitutionPath = join(this.root, ".speckit", "constitution.md");
+    const phases: Phase[] = [
+      ...(existsSync(constitutionPath) ? [] : (["constitution"] as Phase[])),
+      "spec",
+      "clarify",
+      "plan",
+      "tasks",
+      "analyze",
+      "implement",
+    ];
     const startIdx = phases.indexOf(startFromPhase);
+    // "qa" and "done" are handled by the caller — nothing to run here
+    if (startIdx === -1 && (startFromPhase === "qa" || startFromPhase === "done")) {
+      return { success: true, phase: startFromPhase };
+    }
     const activePhases = startIdx >= 0 ? phases.slice(startIdx) : phases;
 
     let lastPhase: Phase = startFromPhase;
@@ -625,26 +737,32 @@ export class SpecKitRunner {
         lastPhase = phase;
 
         switch (phase) {
-          case "spec":
           case "constitution":
+            await this.runConstitution(featureId, featureTitle);
+            break;
+
+          case "spec":
+            await this.runSpec(featureId, featureTitle, acceptanceCriteria);
+            break;
+
           case "clarify":
-          case "analyze":
-            // constitution, clarify, analyze are optional sub-phases within spec
-            if (phase === "spec") {
-              await this.runSpec(featureId, featureTitle, acceptanceCriteria);
-            }
+            await this.runClarify(featureId, featureTitle);
             break;
 
           case "plan":
-            await this.runPlan(featureId, featureTitle);
+            await this.runPlan(featureId, featureTitle, acceptanceCriteria);
             break;
 
           case "tasks":
-            await this.runTasks(featureId, featureTitle);
+            await this.runTasks(featureId, featureTitle, acceptanceCriteria);
+            break;
+
+          case "analyze":
+            await this.runAnalyze(featureId, featureTitle);
             break;
 
           case "implement": {
-            await this.runImplement(featureId, featureTitle);
+            await this.runImplement(featureId, featureTitle, acceptanceCriteria);
             break;
           }
 
@@ -663,60 +781,3 @@ export class SpecKitRunner {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Fallback implementation generator
-// ---------------------------------------------------------------------------
-
-function generateFallbackImplementation(featureTitle: string, featureId: string, context: string): string {
-  // Extract any code snippets from the AI response as hints
-  const codeHints = context.match(/```(?:typescript|ts)?\n([\s\S]*?)```/g) ?? [];
-  const firstCodeHint = codeHints[0]?.replace(/```(?:typescript|ts)?\n/, "").replace(/```$/, "") ?? "";
-
-  if (firstCodeHint.trim().length > 50) {
-    return firstCodeHint;
-  }
-
-  // Generate a stub implementation
-  const moduleName = featureId.toLowerCase().replace(/[^a-z0-9]/g, "_");
-  return `/**
- * ${featureTitle}
- * Feature ID: ${featureId}
- *
- * Auto-generated by speckit-autopilot
- * Generated: ${new Date().toISOString()}
- */
-
-export interface ${pascalCase(featureId)}Config {
-  enabled: boolean;
-}
-
-export interface ${pascalCase(featureId)}Result {
-  success: boolean;
-  message: string;
-}
-
-/**
- * Initialize the ${featureTitle} feature.
- */
-export function init${pascalCase(featureId)}(config: ${pascalCase(featureId)}Config): ${pascalCase(featureId)}Result {
-  if (!config.enabled) {
-    return { success: false, message: "${featureTitle} is disabled" };
-  }
-  return { success: true, message: "${featureTitle} initialized successfully" };
-}
-
-export default {
-  init: init${pascalCase(featureId)},
-};
-
-// Module name for internal use
-export const MODULE_NAME = "${moduleName}";
-`;
-}
-
-function pascalCase(str: string): string {
-  return str
-    .toLowerCase()
-    .replace(/[-_\s]+(.)/g, (_, char: string) => (char as string).toUpperCase())
-    .replace(/^(.)/, (_, char: string) => (char as string).toUpperCase());
-}
