@@ -1,10 +1,10 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
-import { join } from "path";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync } from "fs";
+import { join, relative } from "path";
 import yaml from "js-yaml";
+import Anthropic from "@anthropic-ai/sdk";
+import { spawn, spawnSync } from "child_process";
 import { parseBacklog } from "../core/backlog-schema.js";
 import { readTechStack } from "../core/spec-kit-runner.js";
-import { callClaudeForReview } from "./ai-review.js";
-import { detectStructuralGaps, scanGeneratedFiles } from "./coverage-report.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -30,6 +30,158 @@ export interface AuditFeatureResult {
   error?: string;
 }
 
+export interface StructuralGap {
+  path: string;
+  reason: string;
+  critical: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// callClaudeForReview — single Claude call via SDK or CLI fallback
+// ---------------------------------------------------------------------------
+
+export async function callClaudeForReview(prompt: string): Promise<string> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+
+  if (apiKey) {
+    const client = new Anthropic({ apiKey });
+    const msg = await client.messages.create({
+      model: "claude-sonnet-4-6",
+      max_tokens: 4096,
+      messages: [{ role: "user", content: prompt }],
+    });
+    const text = msg.content.find((c) => c.type === "text");
+    if (!text || text.type !== "text") throw new Error("No text response from Claude");
+    return text.text;
+  }
+
+  // CLI fallback
+  return new Promise((resolve, reject) => {
+    const proc = spawn("claude", ["--print", "--dangerously-skip-permissions"], {
+      shell: false,
+      env: { ...process.env },
+    });
+    proc.stdin.write(prompt);
+    proc.stdin.end();
+    let stdout = "";
+    let stderr = "";
+    proc.stdout.on("data", (c: Buffer) => { stdout += c.toString(); });
+    proc.stderr.on("data", (c: Buffer) => { stderr += c.toString(); });
+    const timer = setTimeout(() => { proc.kill(); reject(new Error("claude CLI timed out")); }, 600_000);
+    proc.on("close", (code) => {
+      clearTimeout(timer);
+      if (code === 0 || stdout.trim()) resolve(stdout.trim());
+      else reject(new Error(`claude CLI exited ${code}: ${stderr.slice(0, 300)}`));
+    });
+    proc.on("error", (err) => { clearTimeout(timer); reject(err); });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// scanGeneratedFiles — list all non-docs source files via git or fallback
+// ---------------------------------------------------------------------------
+
+export function scanGeneratedFiles(root: string): string[] {
+  const result = spawnSync("git", ["ls-files", "--others", "--cached", "--exclude-standard"], {
+    cwd: root,
+    encoding: "utf8",
+    timeout: 10000,
+  });
+  if (result.status !== 0) {
+    return scanDirectories(root, ["src", "lib", "app"]);
+  }
+  return (result.stdout ?? "")
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l && !l.startsWith("docs/") && !l.startsWith("node_modules/") && !l.startsWith("."));
+}
+
+function scanDirectories(root: string, dirs: string[]): string[] {
+  const files: string[] = [];
+  for (const dir of dirs) {
+    const abs = join(root, dir);
+    if (!existsSync(abs)) continue;
+    collectFiles(abs, root, files);
+  }
+  return files;
+}
+
+function collectFiles(dir: string, root: string, acc: string[]): void {
+  for (const entry of readdirSync(dir)) {
+    const abs = join(dir, entry);
+    if (statSync(abs).isDirectory()) {
+      collectFiles(abs, root, acc);
+    } else {
+      acc.push(relative(root, abs));
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// detectStructuralGaps — check for missing build-critical files
+// ---------------------------------------------------------------------------
+
+export function detectStructuralGaps(root: string, techStack: string): StructuralGap[] {
+  const gaps: StructuralGap[] = [];
+  const hasDotNet = /\.NET|C#|csharp/i.test(techStack);
+  const hasFlutter = /Flutter|Dart/i.test(techStack);
+  const hasReact = /React|Next\.js|Vite/i.test(techStack);
+  const hasDocker = /Docker|docker-compose/i.test(techStack);
+
+  if (hasDotNet) {
+    const projectDirs = ["SignHub.Api", "SignHub.Dal", "SignHub.Domain", "SignHub.Services",
+      "SignHub.Tests", "SignHub.ApiTests", "SignHub.IntegrationTests", "SignHub.CieSign"];
+    for (const dir of projectDirs) {
+      if (existsSync(join(root, dir))) {
+        if (!existsSync(join(root, dir, `${dir}.csproj`))) {
+          gaps.push({ path: `${dir}/${dir}.csproj`, reason: "Required for .NET build", critical: true });
+        }
+      }
+    }
+    if (!readdirSync(root).some((f) => f.endsWith(".sln"))) {
+      gaps.push({ path: "*.sln", reason: "Solution file required for .NET build", critical: true });
+    }
+  }
+
+  if (hasFlutter) {
+    const mobileDirs = ["SignHub.Mobile", "mobile", "flutter"];
+    const mobileDir = mobileDirs.find((d) => existsSync(join(root, d)));
+    if (mobileDir) {
+      if (!existsSync(join(root, mobileDir, "pubspec.yaml"))) {
+        gaps.push({ path: `${mobileDir}/pubspec.yaml`, reason: "Required for Flutter build", critical: true });
+      }
+      if (!existsSync(join(root, mobileDir, "lib", "main.dart"))) {
+        gaps.push({ path: `${mobileDir}/lib/main.dart`, reason: "Flutter app entry point", critical: true });
+      }
+    }
+  }
+
+  if (hasReact) {
+    const webDirs = ["SignHub.Web", "frontend", "web"];
+    const webDir = webDirs.find((d) => existsSync(join(root, d)));
+    if (webDir) {
+      if (!existsSync(join(root, webDir, "package.json"))) {
+        gaps.push({ path: `${webDir}/package.json`, reason: "Required for React/Vite build", critical: true });
+      }
+      if (!existsSync(join(root, webDir, "vite.config.ts")) && !existsSync(join(root, webDir, "vite.config.js"))) {
+        gaps.push({ path: `${webDir}/vite.config.ts`, reason: "Vite configuration missing", critical: false });
+      }
+    }
+  }
+
+  if (hasDocker) {
+    if (!existsSync(join(root, "docker-compose.yml")) && !existsSync(join(root, "docker-compose.yaml"))) {
+      gaps.push({ path: "docker-compose.yml", reason: "Docker Compose definition missing", critical: false });
+    }
+  }
+
+  if (!existsSync(join(root, "README.md"))) {
+    gaps.push({ path: "README.md", reason: "Project README missing", critical: false });
+  }
+
+  return gaps;
+}
+
 // ---------------------------------------------------------------------------
 // auditGenerate — static check of docs/product.md
 // ---------------------------------------------------------------------------
@@ -52,7 +204,6 @@ export function auditGenerate(root: string): AuditGenerateResult {
     warnings.push(`Only ${featureCount} features extracted — possible incomplete extraction`);
   }
 
-  // Check Delivery Preference section
   if (!content.includes("## Delivery Preference")) {
     warnings.push("Missing '## Delivery Preference' section");
   }
@@ -96,7 +247,6 @@ export function auditBootstrap(root: string): AuditBootstrapResult {
       warnings.push(`${emptyAc.length} feature(s) with empty acceptanceCriteria: ${emptyAc.map((f) => f.id).join(", ")}`);
     }
 
-    // Compare with product.md feature count if available
     const productPath = join(root, "docs", "product.md");
     if (existsSync(productPath)) {
       const productContent = readFileSync(productPath, "utf8");
@@ -133,7 +283,6 @@ export async function auditFeature(
   const tasksContent = readFileIfExists(join(specsDir, "tasks.md"));
   const techStack = readTechStack(root);
 
-  // Read implementation report for file list
   const implReportPath = join(specsDir, "implementation-report.json");
   let fileList = "No implementation-report.json found — file list unavailable.";
   let fileCount = 0;
@@ -211,6 +360,7 @@ export async function auditFeature(
 
 export async function auditAll(root: string): Promise<void> {
   const reportPath = join(root, "docs", "audit-report.md");
+  mkdirSync(join(root, "docs"), { recursive: true });
   const now = new Date().toISOString().split("T")[0];
   const lines: string[] = [
     `# Audit Report – ${now}`,
@@ -290,16 +440,13 @@ export async function auditAll(root: string): Promise<void> {
   lines.push(`| Feature | Title | Score | Gaps |`);
   lines.push(`|---------|-------|-------|------|`);
 
-  const featureResults: AuditFeatureResult[] = [];
   for (const feature of doneFeatures) {
     console.log(`[audit] Reviewing ${feature.id} – "${feature.title}"...`);
     const result = await auditFeature(root, feature.id, feature.title);
-    featureResults.push(result);
 
     const score = result.skipped ? "—" : result.error ? "✗ error" : "→ see audit.md";
     lines.push(`| ${feature.id} | ${feature.title.slice(0, 50)} | ${score} | [audit.md](specs/${feature.id.toLowerCase()}/audit.md) |`);
 
-    // Incremental write after each feature
     writeFileSync(reportPath, lines.join("\n"), "utf8");
     console.log(`[audit] ${feature.id} done.`);
   }

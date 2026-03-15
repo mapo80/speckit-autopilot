@@ -1,7 +1,7 @@
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "fs";
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { auditGenerate, auditBootstrap } from "../../src/cli/audit.js";
+import { auditGenerate, auditBootstrap, detectStructuralGaps, scanGeneratedFiles } from "../../src/cli/audit.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -192,5 +192,139 @@ describe("auditBootstrap", () => {
     // no state file written
     const result = auditBootstrap(root);
     expect(result.warnings.some((w) => w.includes("autopilot-state.json not found"))).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// detectStructuralGaps
+// ---------------------------------------------------------------------------
+
+describe("detectStructuralGaps", () => {
+  const dirs: string[] = [];
+  afterEach(() => {
+    for (const d of dirs) rmSync(d, { recursive: true, force: true });
+    dirs.length = 0;
+  });
+
+  it("returns no gaps for an empty non-specialized project", () => {
+    const root = makeTmp(); dirs.push(root);
+    // No tech-stack markers, no README
+    const gaps = detectStructuralGaps(root, "TypeScript");
+    // Only README warning expected
+    expect(gaps.length).toBe(1);
+    expect(gaps[0].path).toBe("README.md");
+    expect(gaps[0].critical).toBe(false);
+  });
+
+  it("returns no gaps when README.md exists", () => {
+    const root = makeTmp(); dirs.push(root);
+    writeFileSync(join(root, "README.md"), "# Project", "utf8");
+    const gaps = detectStructuralGaps(root, "TypeScript");
+    expect(gaps).toHaveLength(0);
+  });
+
+  it("detects missing .sln for .NET project", () => {
+    const root = makeTmp(); dirs.push(root);
+    writeFileSync(join(root, "README.md"), "# App", "utf8");
+    const gaps = detectStructuralGaps(root, ".NET 8 / C#");
+    const slnGap = gaps.find((g) => g.path === "*.sln");
+    expect(slnGap).toBeDefined();
+    expect(slnGap?.critical).toBe(true);
+  });
+
+  it("does not flag .sln when one is present", () => {
+    const root = makeTmp(); dirs.push(root);
+    writeFileSync(join(root, "MyApp.sln"), "", "utf8");
+    writeFileSync(join(root, "README.md"), "# App", "utf8");
+    const gaps = detectStructuralGaps(root, ".NET 8 / C#");
+    expect(gaps.find((g) => g.path === "*.sln")).toBeUndefined();
+  });
+
+  it("detects missing .csproj inside a .NET project directory", () => {
+    const root = makeTmp(); dirs.push(root);
+    writeFileSync(join(root, "MySolution.sln"), "", "utf8");
+    writeFileSync(join(root, "README.md"), "# App", "utf8");
+    mkdirSync(join(root, "SignHub.Api"), { recursive: true });
+    // No SignHub.Api.csproj inside SignHub.Api/
+    const gaps = detectStructuralGaps(root, "C# .NET");
+    expect(gaps.find((g) => g.path === "SignHub.Api/SignHub.Api.csproj")).toBeDefined();
+  });
+
+  it("detects missing pubspec.yaml for Flutter project", () => {
+    const root = makeTmp(); dirs.push(root);
+    writeFileSync(join(root, "README.md"), "# App", "utf8");
+    mkdirSync(join(root, "mobile"), { recursive: true });
+    // No pubspec.yaml in mobile/
+    const gaps = detectStructuralGaps(root, "Flutter Dart");
+    expect(gaps.find((g) => g.path.includes("pubspec.yaml"))).toBeDefined();
+    expect(gaps.find((g) => g.path.includes("pubspec.yaml"))?.critical).toBe(true);
+  });
+
+  it("detects missing package.json for React project", () => {
+    const root = makeTmp(); dirs.push(root);
+    writeFileSync(join(root, "README.md"), "# App", "utf8");
+    mkdirSync(join(root, "frontend"), { recursive: true });
+    const gaps = detectStructuralGaps(root, "React TypeScript Vite");
+    expect(gaps.find((g) => g.path.includes("package.json"))).toBeDefined();
+    expect(gaps.find((g) => g.path.includes("package.json"))?.critical).toBe(true);
+  });
+
+  it("detects missing docker-compose.yml for Docker project", () => {
+    const root = makeTmp(); dirs.push(root);
+    writeFileSync(join(root, "README.md"), "# App", "utf8");
+    const gaps = detectStructuralGaps(root, "Docker docker-compose");
+    expect(gaps.find((g) => g.path === "docker-compose.yml")).toBeDefined();
+    expect(gaps.find((g) => g.path === "docker-compose.yml")?.critical).toBe(false);
+  });
+
+  it("does not flag docker-compose when docker-compose.yaml variant exists", () => {
+    const root = makeTmp(); dirs.push(root);
+    writeFileSync(join(root, "README.md"), "# App", "utf8");
+    writeFileSync(join(root, "docker-compose.yaml"), "", "utf8");
+    const gaps = detectStructuralGaps(root, "Docker");
+    expect(gaps.find((g) => g.path === "docker-compose.yml")).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// scanGeneratedFiles
+// ---------------------------------------------------------------------------
+
+describe("scanGeneratedFiles", () => {
+  const dirs: string[] = [];
+  afterEach(() => {
+    for (const d of dirs) rmSync(d, { recursive: true, force: true });
+    dirs.length = 0;
+  });
+
+  it("returns an array (may be empty for non-git dirs)", () => {
+    const root = makeTmp(); dirs.push(root);
+    const files = scanGeneratedFiles(root);
+    expect(Array.isArray(files)).toBe(true);
+  });
+
+  it("excludes docs/ paths from results", () => {
+    const root = makeTmp(); dirs.push(root);
+    mkdirSync(join(root, "docs"), { recursive: true });
+    writeFileSync(join(root, "docs", "product.md"), "# P", "utf8");
+    const files = scanGeneratedFiles(root);
+    expect(files.every((f) => !f.startsWith("docs/"))).toBe(true);
+  });
+
+  it("excludes node_modules/ paths from results", () => {
+    const root = makeTmp(); dirs.push(root);
+    const files = scanGeneratedFiles(root);
+    expect(files.every((f) => !f.startsWith("node_modules/"))).toBe(true);
+  });
+
+  it("falls back gracefully when git is unavailable (non-git dir)", () => {
+    // A temp dir is not a git repo, so git ls-files will return non-zero
+    // and the fallback scans src/, lib/, app/ dirs
+    const root = makeTmp(); dirs.push(root);
+    mkdirSync(join(root, "src"), { recursive: true });
+    writeFileSync(join(root, "src", "index.ts"), "export {};", "utf8");
+    // This will either use git (if temp dir is inside a git tree) or the fallback
+    const files = scanGeneratedFiles(root);
+    expect(Array.isArray(files)).toBe(true);
   });
 });
