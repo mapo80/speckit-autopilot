@@ -21,7 +21,7 @@ const specFile = specIndex !== -1 ? resolve(args[specIndex + 1]) : null;
 const featureIndex = args.indexOf('--feature');
 const featureTarget = featureIndex !== -1 ? args[featureIndex + 1] : undefined;
 
-const COMMANDS = ['generate', 'bootstrap', 'ship', 'ship-feature', 'all', 'audit', 'coverage-report', 'ai-review', 'status'];
+const COMMANDS = ['generate', 'bootstrap', 'ship', 'ship-feature', 'all', 'audit', 'status'];
 
 if (!command || command === '--help' || command === '-h') {
   console.log(`
@@ -34,13 +34,11 @@ Commands:
   ship-feature     Implement a single feature (--feature F-001 or next open)
   all              generate (if --spec) + bootstrap + ship in sequence
   audit            Full quality audit: validate product.md + backlog + AI review per feature → docs/audit-report.md
-  coverage-report  Generate docs/coverage-report.md — structural gaps + file counts (deprecated: use audit)
-  ai-review        Generate docs/ai-review-report.md — AI analysis vs original spec (deprecated: use audit)
   status           Print current phase, backlog summary, and recent log
 
 Options:
   --root <path>      Target project directory (default: current directory)
-  --spec <path>      Source specification file — required for generate; optional for ai-review
+  --spec <path>      Source specification file — required for generate
   --feature <id>     Feature ID for ship-feature (e.g. F-001); omit to pick next open
 
 Examples:
@@ -49,8 +47,7 @@ Examples:
   node run.mjs ship            --root /path/to/project
   node run.mjs ship-feature    --root /path/to/project --feature F-003
   node run.mjs all             --root /path/to/project --spec /path/to/spec.md
-  node run.mjs coverage-report --root /path/to/project
-  node run.mjs ai-review       --root /path/to/project --spec /path/to/spec.md
+  node run.mjs audit           --root /path/to/project
   node run.mjs status          --root /path/to/project
 `);
   process.exit(0);
@@ -263,19 +260,6 @@ try {
     console.log('--- AUDIT ---');
     const { auditAll } = await import('./dist/cli/audit.js');
     await auditAll(root);
-  }
-
-  if (command === 'coverage-report') {
-    console.log('--- COVERAGE REPORT ---');
-    const { coverageReport } = await import('./dist/cli/coverage-report.js');
-    coverageReport(root);
-  }
-
-  if (command === 'ai-review') {
-    console.log('--- AI REVIEW ---');
-    const { aiReview } = await import('./dist/cli/ai-review.js');
-    const effectiveSpec = specFile ?? join(root, 'docs', 'specifiche_finali_sistema_stanze_di_firma_v_3_ascii.md');
-    await aiReview(root, effectiveSpec);
   }
 
   console.log(`\n[speckit-autopilot] done at ${new Date().toISOString()}`);

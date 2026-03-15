@@ -231,8 +231,6 @@ One Claude call per feature; for 19 features that adds ~20-40 min to `audit` sta
 | `all` | `generate` + `bootstrap` + `ship` in sequence | `--spec <path>` (required) |
 | `status` | Print current phase, backlog summary, recent log | — |
 | `audit` | Full QA audit → `docs/audit-report.md` + per-feature `audit.md` | — |
-| `coverage-report` | Static gap analysis → `docs/coverage-report.md` | *(deprecated — use `audit`)* |
-| `ai-review` | AI semantic review → `docs/ai-review-report.md` | *(deprecated — use `audit`)* |
 
 **Global option:** `--root <path>` — target project directory (default: current directory)
 
@@ -246,10 +244,10 @@ node run.mjs all             --root ./my-project --spec ./requirements.md
 node run.mjs status          --root ./my-project
 node run.mjs audit           --root ./my-project
 
-# Or via the installed binary (same arguments)
-speckit-autopilot ship        --root ./my-project
+# Or via the installed binary
+speckit-autopilot ship         --root ./my-project
 speckit-autopilot ship-feature --root ./my-project --feature F-003
-speckit-autopilot audit       --root ./my-project
+speckit-autopilot audit        --root ./my-project
 ```
 
 ---
@@ -302,8 +300,6 @@ All state is stored in the **target repo** (not the plugin directory):
 | `docs/specs/{id}/implementation-report.json` | Generated per feature: files changed + QA results |
 | `docs/specs/{id}/audit.md` | Generated per feature: AI review vs spec (Score 1-5) |
 | `docs/audit-report.md` | Generated: full audit — generate + bootstrap + gaps + features |
-| `docs/coverage-report.md` | Generated: structural gap analysis *(legacy)* |
-| `docs/ai-review-report.md` | Generated: AI semantic review *(legacy)* |
 
 ---
 
@@ -367,9 +363,7 @@ speckit-autopilot/
 │   ├── ship-product.md
 │   ├── ship-feature.md
 │   ├── resume-loop.md
-│   ├── status.md
-│   ├── coverage-report.md   # deprecated
-│   └── ai-review.md         # deprecated
+│   └── status.md
 ├── src/
 │   ├── core/                # Business logic
 │   │   ├── spec-kit-runner.ts   # SpecKitRunner, readTechStack
