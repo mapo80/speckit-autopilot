@@ -140,11 +140,13 @@ describe("bootstrapProduct", () => {
     expect(result.message).toContain("product.md");
   });
 
+  const mockCallClaude = async () => "# Tech Stack\n\n## Backend\n- Language / Runtime: TypeScript\n";
+
   it("creates roadmap, backlog and state when product.md exists", async () => {
     mkdirSync(join(tmp, "docs"), { recursive: true });
     writeFileSync(join(tmp, "docs", "product.md"), SAMPLE_PRODUCT_MD, "utf8");
 
-    const result = await bootstrapProduct(tmp);
+    const result = await bootstrapProduct(tmp, mockCallClaude);
     expect(result.success).toBe(true);
     expect(existsSync(join(tmp, "docs", "roadmap.md"))).toBe(true);
     expect(existsSync(join(tmp, "docs", "product-backlog.yaml"))).toBe(true);
@@ -155,7 +157,7 @@ describe("bootstrapProduct", () => {
     mkdirSync(join(tmp, "docs"), { recursive: true });
     writeFileSync(join(tmp, "docs", "product.md"), SAMPLE_PRODUCT_MD, "utf8");
 
-    const result = await bootstrapProduct(tmp);
+    const result = await bootstrapProduct(tmp, mockCallClaude);
     expect(result.success).toBe(true);
     expect(result.featureCount).toBeGreaterThan(0);
   });
@@ -164,8 +166,29 @@ describe("bootstrapProduct", () => {
     mkdirSync(join(tmp, "docs"), { recursive: true });
     writeFileSync(join(tmp, "docs", "product.md"), SAMPLE_PRODUCT_MD, "utf8");
 
-    const result = await bootstrapProduct(tmp);
+    const result = await bootstrapProduct(tmp, mockCallClaude);
     expect(result.productTitle).toBe("TaskBoard Lite");
+  });
+
+  it("generates docs/tech-stack.md when absent", async () => {
+    mkdirSync(join(tmp, "docs"), { recursive: true });
+    writeFileSync(join(tmp, "docs", "product.md"), SAMPLE_PRODUCT_MD, "utf8");
+
+    await bootstrapProduct(tmp, mockCallClaude);
+    expect(existsSync(join(tmp, "docs", "tech-stack.md"))).toBe(true);
+  });
+
+  it("does not overwrite existing docs/tech-stack.md", async () => {
+    mkdirSync(join(tmp, "docs"), { recursive: true });
+    writeFileSync(join(tmp, "docs", "product.md"), SAMPLE_PRODUCT_MD, "utf8");
+    writeFileSync(join(tmp, "docs", "tech-stack.md"), "# Existing Stack\n", "utf8");
+
+    let callCount = 0;
+    await bootstrapProduct(tmp, async () => { callCount++; return "# Tech Stack\n"; });
+    // callClaude should NOT be called for tech-stack.md since it already exists
+    expect(callCount).toBe(0);
+    const { readFileSync } = await import("fs");
+    expect(readFileSync(join(tmp, "docs", "tech-stack.md"), "utf8")).toBe("# Existing Stack\n");
   });
 });
 

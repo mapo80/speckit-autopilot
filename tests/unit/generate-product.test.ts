@@ -17,6 +17,12 @@ const VALID_PRODUCT_MD = `# My Product
 ## Vision
 A great product for users.
 
+## Tech Stack
+
+### Backend
+- Language / Runtime: Node.js 20
+- Framework: Express
+
 ## In Scope
 
 ### Feature 1 - Core: Authentication

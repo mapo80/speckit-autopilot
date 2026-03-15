@@ -204,6 +204,8 @@ describe("shipFeature – greenfield without backlog", () => {
 
   it("bootstraps and ships when product.md exists but no backlog", async () => {
     mkdirSync(join(tmp, "docs"), { recursive: true });
+    // Pre-create tech-stack.md so bootstrap skips the Claude call
+    writeFileSync(join(tmp, "docs", "tech-stack.md"), "# Tech Stack\n\n## Backend\n- Language / Runtime: TypeScript\n", "utf8");
     const productMd = [
       "# Test Product",
       "",

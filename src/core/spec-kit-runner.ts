@@ -109,11 +109,15 @@ function readArtifact(path: string): string | null {
 
 /**
  * Read the project tech stack from docs/tech-stack.md.
- * Returns the file content if present, otherwise defaults to "TypeScript".
+ * Throws a clear error if the file is absent — run /generate-techstack or bootstrap first.
  */
 export function readTechStack(root: string): string {
   const p = join(root, "docs", "tech-stack.md");
-  if (!existsSync(p)) return "TypeScript";
+  if (!existsSync(p)) {
+    throw new Error(
+      "docs/tech-stack.md not found. Run /generate-techstack or bootstrap first to generate it."
+    );
+  }
   return readFileSync(p, "utf8").trim();
 }
 

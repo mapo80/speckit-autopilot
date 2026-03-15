@@ -113,6 +113,8 @@ function formatWarningsForRetry(warnings: string[]): string {
         return `→ MISSING FEATURES — add these as ### Feature headings: ${w}`;
       if (w.includes("possible incomplete extraction"))
         return `→ EXTRACT MORE features: ${w}`;
+      if (w.includes("Missing '## Tech Stack'"))
+        return "→ ADD ## Tech Stack section listing Backend, Frontend, Mobile (if applicable), Database (if applicable), Infrastructure (if applicable)";
       return `→ FIX: ${w}`;
     })
     .join("\n");
@@ -148,6 +150,28 @@ REQUIRED OUTPUT FORMAT (follow exactly — no preamble, no closing remarks):
 ## Vision
 <2-4 sentences: what the product does, for whom, and the main value it delivers>
 
+## Tech Stack
+
+### Backend
+- Language / Runtime: <e.g. Node.js 20, Python 3.12, C# 12 / .NET 10 — or "Not specified">
+- Framework: <e.g. Express, ASP.NET Core, FastAPI — or "Not specified">
+- Architecture: <e.g. REST API, GraphQL, Monolith — or "Not specified">
+
+### Frontend (omit section if not applicable)
+- Framework: <e.g. React 19 + TypeScript, Next.js 15, Vue 3>
+- UI library: <e.g. Ant Design, shadcn/ui — or "None specified">
+
+### Mobile (omit section if not applicable)
+- Framework: <e.g. Flutter 3 / Dart, React Native, Swift / SwiftUI>
+
+### Database (omit section if not applicable)
+- Primary: <e.g. PostgreSQL 16, MySQL 8, MongoDB 7>
+- Cache / Queue: <e.g. Redis, RabbitMQ — omit if not mentioned>
+
+### Infrastructure (omit section if not applicable)
+- Cloud: <e.g. AWS, GCP, Azure — or "Not specified">
+- Containers: <e.g. Docker + Kubernetes — or "Not specified">
+
 ## In Scope
 
 ### Feature 1 - <EpicName>: <Feature Title>
@@ -180,6 +204,7 @@ RULES:
 3. Delivery Preference: copy-paste EXACT text of each ### Feature N heading — no paraphrasing
 4. All output in English regardless of spec language
 5. Output ONLY the markdown
+6. Tech Stack: extract ALL technology mentions from the spec — do NOT invent technologies not referenced in the spec; omit sub-sections (e.g. ### Mobile) only when clearly not applicable
 ${warningBlock}
 SPECIFICATION:
 ${specContent}`;

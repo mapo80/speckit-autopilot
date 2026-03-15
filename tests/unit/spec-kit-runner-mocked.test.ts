@@ -208,10 +208,12 @@ describe("SpecKitRunner – CLI mode via claude --print", () => {
   beforeEach(() => {
     tmp = makeTmp();
     mkdirSync(join(tmp, "docs"), { recursive: true });
+    writeFileSync(join(tmp, "docs", "tech-stack.md"), "# Tech Stack\n\n## Backend\n- Language / Runtime: TypeScript\n", "utf8");
     mockSpawnSync.mockReset();
     mockSpawn.mockClear();
     resetSpawnResponses();
   });
+
   afterEach(() => {
     rmSync(tmp, { recursive: true, force: true });
   });

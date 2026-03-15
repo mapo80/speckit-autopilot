@@ -198,9 +198,17 @@ describe("readTemplateFile", () => {
 // ---------------------------------------------------------------------------
 
 describe("SpecKitRunner constructor", () => {
+  let tmp: string;
+  beforeEach(() => {
+    tmp = makeTmp();
+    mkdirSync(join(tmp, "docs"), { recursive: true });
+    writeFileSync(join(tmp, "docs", "tech-stack.md"), "# Tech Stack\n\n## Backend\n- Language / Runtime: TypeScript\n", "utf8");
+  });
+  afterEach(() => rmSync(tmp, { recursive: true, force: true }));
+
   it("always returns 'cli' mode", () => {
     try {
-      const runner = new SpecKitRunner("/tmp");
+      const runner = new SpecKitRunner(tmp);
       expect(runner.getMode()).toBe("cli");
     } catch (err) {
       expect((err as Error).message).toMatch(/claude CLI/);
@@ -210,7 +218,7 @@ describe("SpecKitRunner constructor", () => {
   it("ignores apiKey parameter (no SDK)", () => {
     // Providing an API key must not throw — the key is simply ignored
     try {
-      const runner = new SpecKitRunner("/tmp", "ignored-key");
+      const runner = new SpecKitRunner(tmp, "ignored-key");
       expect(runner.getMode()).toBe("cli");
     } catch (err) {
       expect((err as Error).message).toMatch(/claude CLI/);
@@ -228,6 +236,7 @@ describe("SpecKitRunner phase methods (mocked)", () => {
   beforeEach(() => {
     tmp = makeTmp();
     mkdirSync(join(tmp, "docs"), { recursive: true });
+    writeFileSync(join(tmp, "docs", "tech-stack.md"), "# Tech Stack\n\n## Backend\n- Language / Runtime: TypeScript\n", "utf8");
   });
 
   afterEach(() => rmSync(tmp, { recursive: true, force: true }));
@@ -382,7 +391,11 @@ describe("ensureSpecKitInitialized paths", () => {
 
 describe("fallback implementation code-hint branch", () => {
   let tmp: string;
-  beforeEach(() => { tmp = makeTmp(); });
+  beforeEach(() => {
+    tmp = makeTmp();
+    mkdirSync(join(tmp, "docs"), { recursive: true });
+    writeFileSync(join(tmp, "docs", "tech-stack.md"), "# Tech Stack\n\n## Backend\n- Language / Runtime: TypeScript\n", "utf8");
+  });
   afterEach(() => rmSync(tmp, { recursive: true, force: true }));
 
   it("uses code hint from AI response when it is long enough", async () => {

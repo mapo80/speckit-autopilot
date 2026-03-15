@@ -6,7 +6,8 @@ import { makeEmptyBacklog, Backlog, Feature, featureNextId } from "../core/backl
 import { StateStore } from "../core/state-store.js";
 import { generateRoadmap, renderRoadmapMarkdown } from "../core/roadmap-generator.js";
 import { spawnSync } from "child_process";
-import { auditBootstrap } from "./audit.js";
+import { auditBootstrap, callClaudeForReview } from "./audit.js";
+import { generateTechStack } from "./generate-techstack.js";
 
 // ---------------------------------------------------------------------------
 // Spec Kit detection
@@ -280,7 +281,10 @@ export interface BootstrapResult {
   message: string;
 }
 
-export async function bootstrapProduct(root: string): Promise<BootstrapResult> {
+export async function bootstrapProduct(
+  root: string,
+  callClaude: (prompt: string) => Promise<string> = callClaudeForReview
+): Promise<BootstrapResult> {
   const productMdPath = join(root, "docs", "product.md");
 
   if (!existsSync(productMdPath)) {
@@ -310,6 +314,9 @@ export async function bootstrapProduct(root: string): Promise<BootstrapResult> {
   // Write backlog YAML
   const backlogPath = join(root, "docs", "product-backlog.yaml");
   writeFileSync(backlogPath, yaml.dump(backlog), "utf8");
+
+  // Generate tech-stack.md if absent (skip silently if already present)
+  await generateTechStack(root, callClaude, { overwrite: false });
 
   // Create initial state
   const store = new StateStore(root);

@@ -236,6 +236,11 @@ export function auditGenerate(root: string): AuditGenerateResult {
     warnings.push("Missing '## Out of Scope' section");
   }
 
+  // Check E — ## Tech Stack section present
+  if (!content.includes("## Tech Stack")) {
+    warnings.push("Missing '## Tech Stack' section");
+  }
+
   return { valid: featureCount > 0, featureCount, warnings };
 }
 

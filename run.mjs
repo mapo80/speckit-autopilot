@@ -19,7 +19,7 @@ const specFile = specIndex !== -1 ? resolve(args[specIndex + 1]) : null;
 const featureIndex = args.indexOf('--feature');
 const featureTarget = featureIndex !== -1 ? args[featureIndex + 1] : undefined;
 
-const COMMANDS = ['generate', 'bootstrap', 'ship', 'ship-feature', 'all', 'audit', 'status'];
+const COMMANDS = ['generate', 'generate-techstack', 'bootstrap', 'ship', 'ship-feature', 'all', 'audit', 'status'];
 
 if (!command || command === '--help' || command === '-h') {
   console.log(`
@@ -27,6 +27,7 @@ speckit-autopilot runner
 
 Commands:
   generate         Read any spec file and write docs/product.md, then validate it (requires --spec)
+  generate-techstack  Infer tech stack from docs/product.md and write docs/tech-stack.md (backs up existing)
   bootstrap        Parse docs/product.md and create backlog + roadmap + state
   ship             Implement all open features one by one (auto-resumes after interruption)
   ship-feature     Implement a single feature (--feature F-001 or next open)
@@ -77,6 +78,22 @@ try {
     }
     if (genResult.featureCount === 0) {
       console.warn('  WARNING: no features extracted — check that the spec has recognizable feature sections');
+    }
+    console.log();
+  }
+
+  if (command === 'generate-techstack') {
+    console.log('--- GENERATE TECH STACK ---');
+    const { generateTechStack } = await import('./dist/cli/generate-techstack.js');
+    const { callClaudeForReview } = await import('./dist/cli/audit.js');
+    const tsResult = await generateTechStack(root, callClaudeForReview, { overwrite: true });
+    if (tsResult.created) {
+      if (tsResult.backupPath) {
+        console.log(`  Backed up previous: ${tsResult.backupPath}`);
+      }
+      console.log(`  Written: ${tsResult.techStackPath}`);
+    } else {
+      console.log(`  Skipped: ${tsResult.techStackPath} already exists`);
     }
     console.log();
   }

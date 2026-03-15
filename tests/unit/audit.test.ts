@@ -36,6 +36,12 @@ const VALID_PRODUCT_MD = `# My Product
 ## Vision
 A great product.
 
+## Tech Stack
+
+### Backend
+- Language / Runtime: Node.js 20
+- Framework: Express
+
 ## In Scope
 
 ### Feature 1 - Auth: Login
@@ -185,6 +191,22 @@ describe("auditGenerate", () => {
     writeProductMd(root, `# My Product\n\n## Vision\nA product.\n\n## In Scope\n\n### Feature 1 - Auth: Login\n- login\n### Feature 2 - Auth: Register\n- register\n### Feature 3 - Dashboard: Overview\n- overview\n### Feature 4 - Dashboard: Settings\n- settings\n### Feature 5 - API: Healthcheck\n- health\n\n## Delivery Preference\n1. Feature 1 - Auth: Login\n2. Feature 2 - Auth: Register\n3. Feature 3 - Dashboard: Overview\n4. Feature 4 - Dashboard: Settings\n5. Feature 5 - API: Healthcheck\n`);
     const result = auditGenerate(root);
     expect(result.warnings.some((w) => w.includes("'## Out of Scope'"))).toBe(true);
+  });
+
+  // --- Check E: ## Tech Stack ---
+
+  it("warns when ## Tech Stack section is missing", () => {
+    const root = makeTmp(); dirs.push(root);
+    writeProductMd(root, `# My Product\n\n## Vision\nA product.\n\n## In Scope\n\n### Feature 1 - Auth: Login\n- login\n### Feature 2 - Auth: Register\n- register\n### Feature 3 - Dashboard: Overview\n- overview\n### Feature 4 - Dashboard: Settings\n- settings\n### Feature 5 - API: Healthcheck\n- health\n\n## Out of Scope\n- OAuth\n\n## Delivery Preference\n1. Feature 1 - Auth: Login\n2. Feature 2 - Auth: Register\n3. Feature 3 - Dashboard: Overview\n4. Feature 4 - Dashboard: Settings\n5. Feature 5 - API: Healthcheck\n`);
+    const result = auditGenerate(root);
+    expect(result.warnings.some((w) => w.includes("'## Tech Stack'"))).toBe(true);
+  });
+
+  it("does not warn about Tech Stack when section is present", () => {
+    const root = makeTmp(); dirs.push(root);
+    writeProductMd(root, VALID_PRODUCT_MD);
+    const result = auditGenerate(root);
+    expect(result.warnings.some((w) => w.includes("Tech Stack"))).toBe(false);
   });
 });
 

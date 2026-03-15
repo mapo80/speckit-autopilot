@@ -40,6 +40,7 @@ function setupProject(root: string, features: Feature[]): void {
   mkdirSync(join(root, "docs"), { recursive: true });
   const backlog: Backlog = { ...makeEmptyBacklog(), features };
   writeFileSync(join(root, "docs", "product-backlog.yaml"), yaml.dump(backlog), "utf8");
+  writeFileSync(join(root, "docs", "tech-stack.md"), "# Tech Stack\n\n## Backend\n- Language / Runtime: TypeScript\n", "utf8");
   const store = new StateStore(root);
   store.createInitial("greenfield");
 }

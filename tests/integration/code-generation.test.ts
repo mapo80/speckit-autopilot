@@ -176,11 +176,13 @@ describe("bootstrapProduct (integration)", () => {
   beforeEach(() => { tmp = makeTmp(); });
   afterEach(() => rmSync(tmp, { recursive: true, force: true }));
 
+  const mockCallClaude = async () => "# Tech Stack\n\n## Backend\n- Language / Runtime: TypeScript\n";
+
   it("creates docs/ structure from product.md", async () => {
     mkdirSync(join(tmp, "docs"), { recursive: true });
     writeFileSync(join(tmp, "docs", "product.md"), SAMPLE_PRODUCT_MD, "utf8");
 
-    const result = await bootstrapProduct(tmp);
+    const result = await bootstrapProduct(tmp, mockCallClaude);
 
     expect(result.success).toBe(true);
     expect(existsSync(join(tmp, "docs", "roadmap.md"))).toBe(true);
@@ -192,7 +194,7 @@ describe("bootstrapProduct (integration)", () => {
     mkdirSync(join(tmp, "docs"), { recursive: true });
     writeFileSync(join(tmp, "docs", "product.md"), SAMPLE_PRODUCT_MD, "utf8");
 
-    const result = await bootstrapProduct(tmp);
+    const result = await bootstrapProduct(tmp, mockCallClaude);
 
     expect(result.success).toBe(true);
     // Either .specify (from specify init) or .speckit (fallback scaffold) must exist
@@ -205,7 +207,7 @@ describe("bootstrapProduct (integration)", () => {
     mkdirSync(join(tmp, "docs"), { recursive: true });
     writeFileSync(join(tmp, "docs", "product.md"), SAMPLE_PRODUCT_MD, "utf8");
 
-    const result = await bootstrapProduct(tmp);
+    const result = await bootstrapProduct(tmp, mockCallClaude);
 
     // specify CLI is installed in this environment
     expect(result.specKitAvailable).toBe(true);

@@ -43,8 +43,14 @@ describe("auditFeature", () => {
     dirs.length = 0;
   });
 
+  function withTechStack(root: string): void {
+    mkdirSync(join(root, "docs"), { recursive: true });
+    writeFileSync(join(root, "docs", "tech-stack.md"), "# Tech Stack\n\n## Backend\n- Language / Runtime: TypeScript\n", "utf8");
+  }
+
   it("writes audit.md when spec.md and tasks.md are present", async () => {
     const root = makeTmp(); dirs.push(root);
+    withTechStack(root);
     writeSpecDir(root, "F-001", {
       spec: "## Spec\n- User can log in with email/password\n- JWT returned on success",
       tasks: "- [ ] Implement POST /auth/login\n- [ ] Return JWT",
@@ -66,6 +72,7 @@ describe("auditFeature", () => {
 
   it("audit.md path is docs/specs/{featureId}/audit.md", async () => {
     const root = makeTmp(); dirs.push(root);
+    withTechStack(root);
     writeSpecDir(root, "F-002", { spec: "- some criterion" });
 
     const result = await auditFeature(root, "F-002", "Feature Two", mockClaude());
@@ -76,6 +83,7 @@ describe("auditFeature", () => {
 
   it("skips and writes note when both spec.md and tasks.md are missing", async () => {
     const root = makeTmp(); dirs.push(root);
+    withTechStack(root);
     mkdirSync(join(root, "docs", "specs", "f-003"), { recursive: true }); // empty dir
 
     const callClaude = mockClaude();
@@ -92,6 +100,7 @@ describe("auditFeature", () => {
 
   it("uses tasks.md as fallback when spec.md is missing", async () => {
     const root = makeTmp(); dirs.push(root);
+    withTechStack(root);
     writeSpecDir(root, "F-004", {
       tasks: "- [ ] Do something",
     });
@@ -108,6 +117,7 @@ describe("auditFeature", () => {
 
   it("includes file list from implementation-report.json in prompt", async () => {
     const root = makeTmp(); dirs.push(root);
+    withTechStack(root);
     writeSpecDir(root, "F-005", {
       spec: "- some criterion",
       implReport: {
@@ -136,6 +146,7 @@ describe("auditFeature", () => {
 
   it("writes error note to audit.md when callClaude throws", async () => {
     const root = makeTmp(); dirs.push(root);
+    withTechStack(root);
     writeSpecDir(root, "F-006", { spec: "- some criterion" });
 
     const failingClaude = async (_p: string): Promise<string> => {
@@ -154,6 +165,7 @@ describe("auditFeature", () => {
 
   it("includes generated timestamp in audit.md header", async () => {
     const root = makeTmp(); dirs.push(root);
+    withTechStack(root);
     writeSpecDir(root, "F-007", { spec: "- criterion", tasks: "- [ ] task" });
 
     const before = Date.now();
