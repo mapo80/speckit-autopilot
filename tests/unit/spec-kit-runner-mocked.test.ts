@@ -231,12 +231,13 @@ describe("SpecKitRunner – CLI mode via claude --print", () => {
     expect(runner.getMode()).toBe("cli");
   });
 
-  it("selects SDK mode when apiKey is provided", () => {
-    const runner = new SpecKitRunner(tmp, "test-api-key");
-    expect(runner.getMode()).toBe("sdk");
+  it("ignores apiKey parameter — always returns cli mode", () => {
+    mockSpawnSync.mockReturnValue({ status: 0, stdout: "claude 1.0.0", stderr: "" });
+    const runner = new SpecKitRunner(tmp, "ignored-key");
+    expect(runner.getMode()).toBe("cli");
   });
 
-  it("throws when no API key and claude --version fails", () => {
+  it("throws when claude --version fails", () => {
     mockSpawnSync.mockReturnValue({ status: 1, stdout: "", stderr: "not found" });
     expect(() => new SpecKitRunner(tmp)).toThrow(/claude CLI/);
   });

@@ -8,9 +8,7 @@
 
 import { bootstrapProduct } from './dist/cli/bootstrap-product.js';
 import { shipProduct } from './dist/cli/ship-product.js';
-import { spawnSync, spawn } from 'child_process';
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
-import { resolve, join } from 'path';
+import { resolve } from 'path';
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -53,162 +51,6 @@ Examples:
   process.exit(0);
 }
 
-// ---------------------------------------------------------------------------
-// generate-product: call claude --print to convert any spec into product.md
-// ---------------------------------------------------------------------------
-
-function findClaudePath() {
-  const home = process.env.HOME || '';
-  const candidates = [
-    `${home}/.local/bin/claude`,
-    '/opt/homebrew/bin/claude',
-    '/usr/local/bin/claude',
-    'claude',
-  ];
-  for (const p of candidates) {
-    try {
-      const r = spawnSync(p, ['--version'], { encoding: 'utf8', timeout: 5000 });
-      if (r.status === 0) return p;
-    } catch { /* skip */ }
-  }
-  return 'claude';
-}
-
-async function generateProductMd(specPath, projectRoot) {
-  if (!existsSync(specPath)) {
-    throw new Error(`Spec file not found: ${specPath}`);
-  }
-
-  const specContent = readFileSync(specPath, 'utf8');
-  console.log(`  Reading spec: ${specPath} (${specContent.length} chars)`);
-
-  const prompt = `You are a product analyst. Read the following specification document carefully and completely.
-Convert it into a structured product.md file that will be used to generate a feature backlog.
-
-The output MUST follow this EXACT format — no deviations, no preamble, no closing remarks:
-
-# <Product Title>
-
-## Vision
-<2-4 sentences describing the product, its goals, and intended users>
-
-## In Scope
-
-### Feature 1 - <Epic>: <Feature Title>
-- <specific, testable acceptance criterion derived from the spec>
-- <specific, testable acceptance criterion derived from the spec>
-(5 to 15 criteria per feature)
-
-### Feature 2 - <Epic>: <Feature Title>
-- ...
-
-(repeat for ALL features)
-
-## Out of Scope
-- <item explicitly excluded or clearly outside scope>
-
-## Delivery Preference
-1. <title matching EXACTLY the ### Feature N heading above>
-2. ...
-(list ALL features in dependency order: infrastructure first, UI last)
-
-RULES:
-- Read the ENTIRE document before writing — do not stop early
-- Extract ALL significant features — missing one means it will never be built
-- Group features by epic/component (e.g. Backend, Frontend Web, Mobile App, Design System)
-- Each acceptance criterion must be concrete and testable, referencing specific API endpoints, UI components, data fields, state transitions or business rules from the spec
-- Delivery Preference must list ALL features in implementation order
-- Titles in Delivery Preference must match EXACTLY the ### Feature N headings
-- All output must be in English regardless of the source language
-- Output ONLY the markdown — no explanations, no "Here is the file:"
-
-SPECIFICATION DOCUMENT:
-${specContent}`;
-
-  const claudePath = findClaudePath();
-  const env = {
-    ...process.env,
-    PATH: `${process.env.HOME}/.local/bin:/opt/homebrew/bin:/usr/local/bin:${process.env.PATH}`,
-  };
-
-  console.log(`  Calling claude CLI to analyze spec (streaming output)...\n`);
-
-  // Use spawn + streaming so output is visible in real time
-  const output = await new Promise((resolveP, rejectP) => {
-    const proc = spawn(claudePath, ['--print', '--dangerously-skip-permissions'], {
-      shell: false,
-      env,
-      cwd: projectRoot,
-    });
-
-    proc.stdin.write(prompt);
-    proc.stdin.end();
-
-    let stdout = '';
-    let stderr = '';
-
-    proc.stdout.on('data', (chunk) => {
-      const text = chunk.toString();
-      stdout += text;
-      process.stdout.write(text); // stream to terminal in real time
-    });
-
-    proc.stderr.on('data', (chunk) => {
-      const text = chunk.toString();
-      stderr += text;
-      process.stderr.write(text); // show stderr in real time too
-    });
-
-    const timer = setTimeout(() => {
-      proc.kill();
-      rejectP(new Error('claude CLI timed out after 10 minutes'));
-    }, 600_000);
-
-    proc.on('close', (code) => {
-      clearTimeout(timer);
-      console.error(`\n  [debug] claude exited with code=${code} stdout=${stdout.length}chars stderr=${stderr.length}chars`);
-      if (code !== 0) {
-        rejectP(new Error(`claude CLI failed (exit ${code}):\n${stderr.slice(0, 500)}`));
-      } else if (!stdout.trim()) {
-        rejectP(new Error(`claude CLI returned empty stdout (stderr: ${stderr.slice(0, 300)})`));
-      } else {
-        resolveP(stdout.trim());
-      }
-    });
-
-    proc.on('error', (err) => {
-      clearTimeout(timer);
-      rejectP(new Error(`claude CLI error: ${err.message}`));
-    });
-  });
-
-  console.log('\n');
-
-  const productMdPath = join(projectRoot, 'docs', 'product.md');
-  mkdirSync(join(projectRoot, 'docs'), { recursive: true });
-  writeFileSync(productMdPath, output, 'utf8');
-
-  // Validate the generated product.md immediately
-  const { auditGenerate } = await import('./dist/cli/audit.js');
-  const auditResult = auditGenerate(projectRoot);
-  if (auditResult.warnings.length > 0) {
-    console.warn(`  AUDIT WARNINGS: ${auditResult.warnings.join('; ')}`);
-  } else {
-    console.log(`  Audit: product.md valid (${auditResult.featureCount} features, no warnings)`);
-  }
-
-  // Count extracted features
-  const featureCount = (output.match(/^### Feature \d+/gm) ?? []).length;
-  console.log(`  Written: ${productMdPath}`);
-  console.log(`  Features extracted: ${featureCount}`);
-
-  return { featureCount, productMdPath };
-}
-
-// ---------------------------------------------------------------------------
-// Main
-// ---------------------------------------------------------------------------
-
 if (!COMMANDS.includes(command)) {
   console.error(`Unknown command: ${command}`);
   process.exit(1);
@@ -224,7 +66,15 @@ try {
       process.exit(1);
     }
     console.log('--- GENERATE PRODUCT.MD ---');
-    const genResult = generateProductMd(specFile, root);
+    const { generateProduct } = await import('./dist/cli/generate-product.js');
+    const genResult = await generateProduct(specFile, root);
+    console.log(`  Written: ${genResult.productMdPath}`);
+    console.log(`  Features extracted: ${genResult.featureCount}`);
+    if (genResult.warnings.length > 0) {
+      console.warn(`  AUDIT WARNINGS: ${genResult.warnings.join('; ')}`);
+    } else {
+      console.log(`  Audit: product.md valid (${genResult.featureCount} features, no warnings)`);
+    }
     if (genResult.featureCount === 0) {
       console.warn('  WARNING: no features extracted — check that the spec has recognizable feature sections');
     }

@@ -1,4 +1,3 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { join, dirname } from "path";
 import { spawnSync, spawn } from "child_process";
@@ -388,8 +387,6 @@ export function verifyImplementationProducedCode(
 // Main SpecKitRunner
 // ---------------------------------------------------------------------------
 
-type RunnerMode = "cli" | "sdk";
-
 /** Common locations where the claude CLI may be installed. */
 const CLAUDE_SEARCH_PATHS = [
   process.env.HOME ? `${process.env.HOME}/.local/bin` : "",
@@ -399,67 +396,46 @@ const CLAUDE_SEARCH_PATHS = [
 ].filter(Boolean);
 
 /** Augmented PATH that includes common claude install dirs. */
-function augmentedPath(): string {
+export function augmentedPath(): string {
   const existing = process.env.PATH ?? "";
   const extra = CLAUDE_SEARCH_PATHS.filter((p) => !existing.includes(p)).join(":");
   return extra ? `${extra}:${existing}` : existing;
 }
 
 export class SpecKitRunner {
-  private readonly mode: RunnerMode;
-  private readonly client?: Anthropic;
   private readonly root: string;
-  private readonly model = "claude-sonnet-4-6";
   private readonly claudePath: string = "claude";
   private readonly techStack: string;
 
-  constructor(root: string, apiKey?: string) {
+  /**
+   * Overridable Claude call — defaults to the CLI implementation.
+   * Tests can replace this with a mock: `runner.callClaude = async () => "..."`.
+   */
+  callClaude: (prompt: string) => Promise<string>;
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  constructor(root: string, _apiKey?: string) {
     this.root = root;
-    const key = apiKey ?? process.env.ANTHROPIC_API_KEY;
-    if (key) {
-      this.mode = "sdk";
-      this.client = new Anthropic({ apiKey: key });
-    } else {
-      // No API key — try claude CLI with augmented PATH
-      const env = { ...process.env, PATH: augmentedPath() };
-      const check = spawnSync("claude", ["--version"], { encoding: "utf8", shell: false, env });
-      if (check.status !== 0) {
-        throw new Error(
-          "SpecKitRunner requires either ANTHROPIC_API_KEY (SDK mode) " +
-            "or the claude CLI installed and authenticated (CLI mode). " +
-            "Run `claude --version` to verify the CLI is available."
-        );
-      }
-      this.mode = "cli";
+    // Always use CLI — verify it is available
+    const env = { ...process.env, PATH: augmentedPath() };
+    const check = spawnSync("claude", ["--version"], { encoding: "utf8", shell: false, env });
+    if (check.status !== 0) {
+      throw new Error(
+        "SpecKitRunner requires the claude CLI installed and authenticated. " +
+          "Run `claude --version` to verify the CLI is available."
+      );
     }
+    this.callClaude = this.callClaudeCli.bind(this);
     this.techStack = readTechStack(root);
   }
 
-  /** Expose mode for testing / logging */
-  getMode(): RunnerMode {
-    return this.mode;
+  /** Always "cli" — kept for compatibility with existing callers. */
+  getMode(): "cli" {
+    return "cli";
   }
 
   private specsDir(featureId: string): string {
     return join(this.root, "docs", "specs", featureId.toLowerCase());
-  }
-
-  private async callClaude(prompt: string): Promise<string> {
-    return this.mode === "sdk" ? this.callClaudeSdk(prompt) : this.callClaudeCli(prompt);
-  }
-
-  private async callClaudeSdk(prompt: string): Promise<string> {
-    if (!this.client) throw new Error("Anthropic client not initialized");
-    const message = await this.client.messages.create({
-      model: this.model,
-      max_tokens: 8192,
-      messages: [{ role: "user", content: prompt }],
-    });
-    const textContent = message.content.find((c) => c.type === "text");
-    if (!textContent || textContent.type !== "text") {
-      throw new Error("Claude returned no text content");
-    }
-    return textContent.text;
   }
 
   private callClaudeCli(prompt: string): Promise<string> {
@@ -585,54 +561,33 @@ export class SpecKitRunner {
     );
     const response = await this.callClaude(prompt);
 
-    // In CLI mode with --dangerously-skip-permissions, claude writes files
-    // directly via tool_use. Check what was written to disk first.
-    if (this.mode === "cli") {
-      const featureDir = join(this.root, "src", "features", featureId.toLowerCase());
-      const { spawnSync: sp } = await import("child_process");
-      const found = sp("find", [this.root + "/src", "-name", "*.ts", "-not", "-name", "*.d.ts"], {
-        encoding: "utf8",
-        shell: false,
-      });
-      const filesOnDisk = (found?.stdout ?? "").trim().split("\n").filter(Boolean);
-      if (filesOnDisk.length > 0) {
-        return filesOnDisk;
-      }
-      // Nothing written — fall back to text extraction or stub
-      const generatedFiles = extractGeneratedFiles(response);
-      const writtenPaths: string[] = [];
-      for (const file of generatedFiles) {
-        const fullPath = join(this.root, file.path);
-        writeArtifact(fullPath, file.content);
-        writtenPaths.push(fullPath);
-      }
-      if (writtenPaths.length === 0) {
-        const indexPath = join(featureDir, "index.ts");
-        writeArtifact(indexPath, generateFallbackImplementation(featureTitle, featureId, response));
-        writtenPaths.push(indexPath);
-      }
-      return writtenPaths;
+    const featureDir = join(this.root, "src", "features", featureId.toLowerCase());
+
+    // With --dangerously-skip-permissions, claude may write files directly via
+    // tool_use. Check what landed on disk first.
+    const { spawnSync: sp } = await import("child_process");
+    const found = sp("find", [this.root + "/src", "-name", "*.ts", "-not", "-name", "*.d.ts"], {
+      encoding: "utf8",
+      shell: false,
+    });
+    const filesOnDisk = (found?.stdout ?? "").trim().split("\n").filter(Boolean);
+    if (filesOnDisk.length > 0) {
+      return filesOnDisk;
     }
 
-    // SDK mode: extract <<<FILE:>>> blocks from text response
+    // Nothing written — extract <<<FILE:>>> blocks from text response, or stub
     const generatedFiles = extractGeneratedFiles(response);
     const writtenPaths: string[] = [];
-
     for (const file of generatedFiles) {
       const fullPath = join(this.root, file.path);
       writeArtifact(fullPath, file.content);
       writtenPaths.push(fullPath);
     }
-
-    // If no files were extracted, create a minimal implementation
     if (writtenPaths.length === 0) {
-      const featureDir = join(this.root, "src", "features", featureId.toLowerCase());
       const indexPath = join(featureDir, "index.ts");
-      const fallback = generateFallbackImplementation(featureTitle, featureId, response);
-      writeArtifact(indexPath, fallback);
+      writeArtifact(indexPath, generateFallbackImplementation(featureTitle, featureId, response));
       writtenPaths.push(indexPath);
     }
-
     return writtenPaths;
   }
 

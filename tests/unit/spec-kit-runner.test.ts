@@ -1,4 +1,3 @@
-import { describe, it, expect, beforeEach, afterEach, jest } from "@jest/globals";
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, existsSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
@@ -17,6 +16,14 @@ import {
 
 function makeTmp(): string {
   return mkdtempSync(join(tmpdir(), "spec-kit-runner-test-"));
+}
+
+/** Create a runner with callClaude mocked to return sequential responses. */
+function makeRunner(root: string, responses: string[]): SpecKitRunner {
+  const runner = new SpecKitRunner(root);
+  let idx = 0;
+  runner.callClaude = async (_prompt: string) => responses[idx++ % responses.length];
+  return runner;
 }
 
 // ---------------------------------------------------------------------------
@@ -96,7 +103,6 @@ describe("verifyImplementationProducedCode", () => {
 
   it("returns hasNewFiles:false when feature dir is empty", () => {
     const result = verifyImplementationProducedCode(tmp, "F-999");
-    // No files created — depends on git state but should not throw
     expect(typeof result.hasNewFiles).toBe("boolean");
     expect(typeof result.diffSummary).toBe("string");
   });
@@ -108,9 +114,7 @@ describe("verifyImplementationProducedCode", () => {
     writeFileSync(join(specsDir, "plan.md"), "# Plan", "utf8");
     writeFileSync(join(specsDir, "tasks.md"), "# Tasks", "utf8");
 
-    // No src files → hasNewFiles comes from spec artifacts
     const result = verifyImplementationProducedCode(tmp, "F-001");
-    // spec artifacts count but diffSummary notes "no application code"
     expect(result.changedFiles.length).toBeGreaterThanOrEqual(0);
     expect(typeof result.diffSummary).toBe("string");
   });
@@ -140,10 +144,7 @@ describe("ensureSpecKitInitialized", () => {
   });
 
   it("returns ok:false when specify init would fail (non-existent cwd)", () => {
-    // Point to a path that definitely won't have specify CLI work correctly for init
-    // We test a non-existent directory so spawnSync cwd fails
     const result = ensureSpecKitInitialized("/tmp/definitely-does-not-exist-speckit-test-xyzzy");
-    // It should return ok:false since the cwd doesn't exist
     expect(typeof result.ok).toBe("boolean");
   });
 });
@@ -197,33 +198,31 @@ describe("readTemplateFile", () => {
 // ---------------------------------------------------------------------------
 
 describe("SpecKitRunner constructor", () => {
-  it("constructs without API key when claude CLI is available (cli mode)", () => {
-    const savedKey = process.env.ANTHROPIC_API_KEY;
-    delete process.env.ANTHROPIC_API_KEY;
-
+  it("always returns 'cli' mode", () => {
     try {
-      // With dual-mode support: if claude CLI is available, no throw
-      // (the mocked spec-kit-runner-mocked.test.ts covers the failure case)
       const runner = new SpecKitRunner("/tmp");
       expect(runner.getMode()).toBe("cli");
     } catch (err) {
-      // If claude CLI is not available in this env, error should mention claude CLI
       expect((err as Error).message).toMatch(/claude CLI/);
-    } finally {
-      if (savedKey !== undefined) process.env.ANTHROPIC_API_KEY = savedKey;
     }
   });
 
-  it("constructs successfully when API key is provided", () => {
-    expect(() => new SpecKitRunner("/tmp", "test-key-abc")).not.toThrow();
+  it("ignores apiKey parameter (no SDK)", () => {
+    // Providing an API key must not throw — the key is simply ignored
+    try {
+      const runner = new SpecKitRunner("/tmp", "ignored-key");
+      expect(runner.getMode()).toBe("cli");
+    } catch (err) {
+      expect((err as Error).message).toMatch(/claude CLI/);
+    }
   });
 });
 
 // ---------------------------------------------------------------------------
-// SpecKitRunner.runPhases (mocked Anthropic SDK)
+// SpecKitRunner phases (mocked via runner.callClaude)
 // ---------------------------------------------------------------------------
 
-describe("SpecKitRunner.runPhases (mocked)", () => {
+describe("SpecKitRunner phase methods (mocked)", () => {
   let tmp: string;
 
   beforeEach(() => {
@@ -231,35 +230,10 @@ describe("SpecKitRunner.runPhases (mocked)", () => {
     mkdirSync(join(tmp, "docs"), { recursive: true });
   });
 
-  afterEach(() => {
-    rmSync(tmp, { recursive: true, force: true });
-    jest.restoreAllMocks();
-  });
-
-  function mockRunnerWithResponse(runner: SpecKitRunner, responses: Record<string, string>): void {
-    // Access private client via any cast and mock messages.create
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const client = (runner as any).client as {
-      messages: { create: ReturnType<typeof jest.fn> };
-    };
-    let callIdx = 0;
-    const responseKeys = Object.keys(responses);
-    client.messages = {
-      create: jest.fn().mockImplementation(async () => {
-        const key = responseKeys[callIdx % responseKeys.length];
-        callIdx++;
-        return {
-          content: [{ type: "text", text: responses[key] }],
-        };
-      }),
-    };
-  }
+  afterEach(() => rmSync(tmp, { recursive: true, force: true }));
 
   it("writes spec.md artifact during spec phase", async () => {
-    const runner = new SpecKitRunner(tmp, "test-key");
-    mockRunnerWithResponse(runner, {
-      spec: "# Feature Specification: My Feature\n\nThis is a great spec.",
-    });
+    const runner = makeRunner(tmp, ["# Feature Specification: My Feature\n\nThis is a great spec."]);
 
     await runner.runSpec("F-001", "My Feature", ["Must work"]);
 
@@ -268,41 +242,29 @@ describe("SpecKitRunner.runPhases (mocked)", () => {
   });
 
   it("writes plan.md artifact during plan phase", async () => {
-    const runner = new SpecKitRunner(tmp, "test-key");
-    // Pre-write spec so plan can read it
     const specsDir = join(tmp, "docs", "specs", "f-001");
     mkdirSync(specsDir, { recursive: true });
     writeFileSync(join(specsDir, "spec.md"), "# Feature Spec", "utf8");
 
-    mockRunnerWithResponse(runner, {
-      plan: "# Implementation Plan: My Feature\n\n## Summary\nDo the thing.",
-    });
-
+    const runner = makeRunner(tmp, ["# Implementation Plan: My Feature\n\n## Summary\nDo the thing."]);
     await runner.runPlan("F-001", "My Feature");
 
-    const planPath = join(specsDir, "plan.md");
-    expect(existsSync(planPath)).toBe(true);
+    expect(existsSync(join(specsDir, "plan.md"))).toBe(true);
   });
 
   it("writes tasks.md artifact during tasks phase", async () => {
-    const runner = new SpecKitRunner(tmp, "test-key");
     const specsDir = join(tmp, "docs", "specs", "f-001");
     mkdirSync(specsDir, { recursive: true });
     writeFileSync(join(specsDir, "spec.md"), "# Spec", "utf8");
     writeFileSync(join(specsDir, "plan.md"), "# Plan", "utf8");
 
-    mockRunnerWithResponse(runner, {
-      tasks: "# Tasks: My Feature\n\n- [ ] T001 Create src/features/f-001/index.ts",
-    });
-
+    const runner = makeRunner(tmp, ["# Tasks: My Feature\n\n- [ ] T001 Create src/features/f-001/index.ts"]);
     await runner.runTasks("F-001", "My Feature");
 
-    const tasksPath = join(specsDir, "tasks.md");
-    expect(existsSync(tasksPath)).toBe(true);
+    expect(existsSync(join(specsDir, "tasks.md"))).toBe(true);
   });
 
   it("writes source files during implement phase via FILE markers", async () => {
-    const runner = new SpecKitRunner(tmp, "test-key");
     const specsDir = join(tmp, "docs", "specs", "f-001");
     mkdirSync(specsDir, { recursive: true });
     writeFileSync(join(specsDir, "spec.md"), "# Spec", "utf8");
@@ -315,8 +277,7 @@ describe("SpecKitRunner.runPhases (mocked)", () => {
 export function myFeature() { return true; }
 <<<END_FILE>>>
 `;
-    mockRunnerWithResponse(runner, { implement: implementResponse });
-
+    const runner = makeRunner(tmp, [implementResponse]);
     const written = await runner.runImplement("F-001", "My Feature");
 
     expect(written.length).toBeGreaterThan(0);
@@ -324,17 +285,13 @@ export function myFeature() { return true; }
   });
 
   it("generates fallback stub when AI returns no FILE markers", async () => {
-    const runner = new SpecKitRunner(tmp, "test-key");
     const specsDir = join(tmp, "docs", "specs", "f-001");
     mkdirSync(specsDir, { recursive: true });
     writeFileSync(join(specsDir, "spec.md"), "# Spec", "utf8");
     writeFileSync(join(specsDir, "plan.md"), "# Plan", "utf8");
     writeFileSync(join(specsDir, "tasks.md"), "# Tasks", "utf8");
 
-    mockRunnerWithResponse(runner, {
-      implement: "The implementation should create some files.",
-    });
-
+    const runner = makeRunner(tmp, ["The implementation should create some files."]);
     const written = await runner.runImplement("F-001", "My Feature");
 
     expect(written.length).toBeGreaterThan(0);
@@ -342,34 +299,21 @@ export function myFeature() { return true; }
   });
 
   it("runPhases returns success:true when all phases pass", async () => {
-    const runner = new SpecKitRunner(tmp, "test-key");
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const client = (runner as any).client as { messages: { create: ReturnType<typeof jest.fn> } };
     const implementResponse = `<<<FILE: src/features/f-001/index.ts>>>\nexport const x = 1;\n<<<END_FILE>>>`;
-    let call = 0;
-    const mockTexts = [
+    const runner = makeRunner(tmp, [
       "# Feature Specification: Test\nSpec content.",
       "# Implementation Plan: Test\nPlan content.",
       "# Tasks: Test\n- [ ] T001 Create index.ts",
       implementResponse,
-    ];
-    client.messages = {
-      create: jest.fn().mockImplementation(async () => ({
-        content: [{ type: "text", text: mockTexts[call++ % mockTexts.length] }],
-      })),
-    };
+    ]);
 
     const result = await runner.runPhases("F-001", "Test Feature", ["works"], "spec");
     expect(result.success).toBe(true);
   });
 
-  it("runPhases returns success:false when AI call throws", async () => {
-    const runner = new SpecKitRunner(tmp, "test-key");
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const client = (runner as any).client as { messages: { create: ReturnType<typeof jest.fn> } };
-    client.messages = {
-      create: jest.fn().mockRejectedValue(new Error("API error: quota exceeded")),
-    };
+  it("runPhases returns success:false when callClaude throws", async () => {
+    const runner = new SpecKitRunner(tmp);
+    runner.callClaude = async () => { throw new Error("API error: quota exceeded"); };
 
     const result = await runner.runPhases("F-001", "Test Feature", [], "spec");
     expect(result.success).toBe(false);
@@ -377,96 +321,38 @@ export function myFeature() { return true; }
   });
 
   it("runPhases returns success:false when implement produces no files", async () => {
-    const runner = new SpecKitRunner(tmp, "test-key");
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const client = (runner as any).client as { messages: { create: ReturnType<typeof jest.fn> } };
-    // Provide valid spec/plan/tasks responses but empty implement
-    let call = 0;
-    client.messages = {
-      create: jest.fn().mockImplementation(async () => {
-        call++;
-        // Spec, plan, tasks return valid text; implement returns something
-        // that does produce a fallback file (the stub generator always writes)
-        return { content: [{ type: "text", text: call < 4 ? "# Content" : "Some text" }] };
-      }),
-    };
+    const runner = makeRunner(tmp, ["# Content", "# Content", "# Content", "Some text"]);
 
-    // This should succeed because fallback stub is always written
+    // Fallback stub is always written so success is true
     const result = await runner.runPhases("F-001", "Test Feature", [], "spec");
     expect(typeof result.success).toBe("boolean");
   });
 
   it("runPhases can start from 'plan' phase", async () => {
-    const runner = new SpecKitRunner(tmp, "test-key");
     const specsDir = join(tmp, "docs", "specs", "f-002");
     mkdirSync(specsDir, { recursive: true });
     writeFileSync(join(specsDir, "spec.md"), "# Existing Spec", "utf8");
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const client = (runner as any).client as { messages: { create: ReturnType<typeof jest.fn> } };
     const implementResponse = `<<<FILE: src/features/f-002/index.ts>>>\nexport const y = 2;\n<<<END_FILE>>>`;
-    let call = 0;
-    const texts = [
+    const runner = makeRunner(tmp, [
       "# Plan\nPlan content.",
       "# Tasks\n- [ ] T001 Create src/features/f-002/index.ts",
       implementResponse,
-    ];
-    client.messages = {
-      create: jest.fn().mockImplementation(async () => ({
-        content: [{ type: "text", text: texts[call++ % texts.length] }],
-      })),
-    };
+    ]);
 
     const result = await runner.runPhases("F-002", "Feature 2", [], "plan");
     expect(result.success).toBe(true);
   });
 
-  it("callClaude throws when response has no text content", async () => {
-    const runner = new SpecKitRunner(tmp, "test-key");
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const client = (runner as any).client as { messages: { create: ReturnType<typeof jest.fn> } };
-    client.messages = {
-      create: jest.fn().mockResolvedValue({
-        content: [{ type: "image", source: {} }],
-      }),
-    };
-
-    const result = await runner.runPhases("F-001", "Test", [], "spec");
-    expect(result.success).toBe(false);
-    expect(result.error).toContain("no text content");
-  });
-
   it("runPhases handles qa and done phases without error (no-op)", async () => {
-    const runner = new SpecKitRunner(tmp, "test-key");
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const client = (runner as any).client as { messages: { create: ReturnType<typeof jest.fn> } };
-    const implementResponse = `<<<FILE: src/features/f-003/index.ts>>>\nexport const z = 3;\n<<<END_FILE>>>`;
-    let call = 0;
-    const texts = [
-      "# Spec",
-      "# Plan",
-      "# Tasks",
-      implementResponse,
-    ];
-    client.messages = {
-      create: jest.fn().mockImplementation(async () => ({
-        content: [{ type: "text", text: texts[call++ % texts.length] }],
-      })),
-    };
-
-    // Starting from "qa" should be a no-op and return success
+    const runner = makeRunner(tmp, ["# anything"]);
     const result = await runner.runPhases("F-003", "Feature 3", [], "qa");
     expect(result.success).toBe(true);
   });
 
   it("runPhases wraps non-Error thrown values", async () => {
-    const runner = new SpecKitRunner(tmp, "test-key");
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const client = (runner as any).client as { messages: { create: ReturnType<typeof jest.fn> } };
-    // Throw a string (not an Error instance)
-    client.messages = {
-      create: jest.fn().mockRejectedValue("plain string error"),
-    };
+    const runner = new SpecKitRunner(tmp);
+    runner.callClaude = async () => { throw "plain string error"; };
 
     const result = await runner.runPhases("F-001", "Test", [], "spec");
     expect(result.success).toBe(false);
@@ -475,7 +361,7 @@ export function myFeature() { return true; }
 });
 
 // ---------------------------------------------------------------------------
-// ensureSpecKitInitialized: success path (CLI runs but dirs don't pre-exist)
+// ensureSpecKitInitialized: success path
 // ---------------------------------------------------------------------------
 
 describe("ensureSpecKitInitialized paths", () => {
@@ -484,18 +370,14 @@ describe("ensureSpecKitInitialized paths", () => {
   afterEach(() => rmSync(tmp, { recursive: true, force: true }));
 
   it("returns ok:true when only .specify exists (no .claude/commands)", () => {
-    // .specify exists but .claude/commands does not → will try specify init
-    // In this env specify is installed so init should succeed
     mkdirSync(join(tmp, ".specify"), { recursive: true });
-    // Without .claude/commands, it will attempt init
     const result = ensureSpecKitInitialized(tmp);
-    // Either ok:true (init succeeded) or ok:false (acceptable failure)
     expect(typeof result.ok).toBe("boolean");
   });
 });
 
 // ---------------------------------------------------------------------------
-// generateFallbackImplementation: code-hint branch
+// fallback implementation code-hint branch
 // ---------------------------------------------------------------------------
 
 describe("fallback implementation code-hint branch", () => {
@@ -504,26 +386,17 @@ describe("fallback implementation code-hint branch", () => {
   afterEach(() => rmSync(tmp, { recursive: true, force: true }));
 
   it("uses code hint from AI response when it is long enough", async () => {
-    const runner = new SpecKitRunner(tmp, "test-key");
     const specsDir = join(tmp, "docs", "specs", "f-hint");
     mkdirSync(specsDir, { recursive: true });
     writeFileSync(join(specsDir, "spec.md"), "# Spec", "utf8");
     writeFileSync(join(specsDir, "plan.md"), "# Plan", "utf8");
     writeFileSync(join(specsDir, "tasks.md"), "# Tasks", "utf8");
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const client = (runner as any).client as { messages: { create: ReturnType<typeof jest.fn> } };
-    // Return a code block with > 50 chars but no FILE markers
     const longCodeHint = "export function myHintedFeature() {\n  return { implemented: true, value: 42 };\n}\n";
-    client.messages = {
-      create: jest.fn().mockResolvedValue({
-        content: [{ type: "text", text: "```typescript\n" + longCodeHint + "```" }],
-      }),
-    };
+    const runner = makeRunner(tmp, ["```typescript\n" + longCodeHint + "```"]);
 
     const written = await runner.runImplement("F-hint", "Hint Feature");
     expect(written.length).toBeGreaterThan(0);
-    // The written file should contain content from the hint
     const { readFileSync: rfs } = await import("fs");
     const content = rfs(written[0], "utf8");
     expect(content).toContain("myHintedFeature");
@@ -537,32 +410,25 @@ describe("fallback implementation code-hint branch", () => {
 describe("verifyImplementationProducedCode git-diff path", () => {
   let tmp: string;
 
-  beforeEach(() => {
-    tmp = makeTmp();
-  });
-
+  beforeEach(() => { tmp = makeTmp(); });
   afterEach(() => rmSync(tmp, { recursive: true, force: true }));
 
   it("detects git-tracked new source files via ls-files", async () => {
     const { spawnSync } = await import("child_process");
 
-    // Init a git repo in tmp
     spawnSync("git", ["init"], { cwd: tmp, encoding: "utf8" });
     spawnSync("git", ["config", "user.email", "test@test.com"], { cwd: tmp, encoding: "utf8" });
     spawnSync("git", ["config", "user.name", "Test"], { cwd: tmp, encoding: "utf8" });
 
-    // Create and commit an initial file so HEAD exists
     writeFileSync(join(tmp, "README.md"), "# Test", "utf8");
     spawnSync("git", ["add", "README.md"], { cwd: tmp, encoding: "utf8" });
     spawnSync("git", ["commit", "-m", "init"], { cwd: tmp, encoding: "utf8" });
 
-    // Create an untracked src file (git ls-files --others picks this up)
     const srcDir = join(tmp, "src", "features", "f-git");
     mkdirSync(srcDir, { recursive: true });
     writeFileSync(join(srcDir, "index.ts"), "export const gitDetected = true;", "utf8");
 
     const result = verifyImplementationProducedCode(tmp, "F-git");
-    // Either detected via src/ directory scan or via git ls-files
     expect(result.hasNewFiles).toBe(true);
   });
 
@@ -576,14 +442,10 @@ describe("verifyImplementationProducedCode git-diff path", () => {
     spawnSync("git", ["add", "README.md"], { cwd: tmp, encoding: "utf8" });
     spawnSync("git", ["commit", "-m", "i"], { cwd: tmp, encoding: "utf8" });
 
-    // Only a .spec.ts file in src/ — should not count as application code via git
-    // (but the src/ directory scan finds .ts files that aren't .d.ts)
     const srcDir = join(tmp, "src", "features", "f-spectest");
     mkdirSync(srcDir, { recursive: true });
     writeFileSync(join(srcDir, "index.spec.ts"), "// tests only", "utf8");
 
-    // The src/ directory scan finds *.ts (not *.d.ts) so hasNewFiles will be true
-    // The important thing is the test runs without throwing
     const result = verifyImplementationProducedCode(tmp, "F-spectest");
     expect(typeof result.hasNewFiles).toBe("boolean");
   });

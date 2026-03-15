@@ -1,7 +1,6 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync } from "fs";
 import { join, relative } from "path";
 import yaml from "js-yaml";
-import Anthropic from "@anthropic-ai/sdk";
 import { spawn, spawnSync } from "child_process";
 import { parseBacklog } from "../core/backlog-schema.js";
 import { readTechStack } from "../core/spec-kit-runner.js";
@@ -37,25 +36,10 @@ export interface StructuralGap {
 }
 
 // ---------------------------------------------------------------------------
-// callClaudeForReview — single Claude call via SDK or CLI fallback
+// callClaudeForReview — single Claude call via CLI
 // ---------------------------------------------------------------------------
 
-export async function callClaudeForReview(prompt: string): Promise<string> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-
-  if (apiKey) {
-    const client = new Anthropic({ apiKey });
-    const msg = await client.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 4096,
-      messages: [{ role: "user", content: prompt }],
-    });
-    const text = msg.content.find((c) => c.type === "text");
-    if (!text || text.type !== "text") throw new Error("No text response from Claude");
-    return text.text;
-  }
-
-  // CLI fallback
+export function callClaudeForReview(prompt: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const proc = spawn("claude", ["--print", "--dangerously-skip-permissions"], {
       shell: false,
