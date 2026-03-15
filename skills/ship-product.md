@@ -1,73 +1,34 @@
 # speckit-autopilot: ship-product
 
-Iteratively implement every open feature in `docs/product-backlog.yaml` using
-the full Spec Kit workflow, one feature at a time, until:
-- all features are `done`, OR
-- an unresolvable blocking error occurs, OR
-- consecutive failures exceed `maxFailures` (default 3)
+Implement all open features in the backlog, one at a time, until the product is complete.
+Safe to re-run — automatically resumes from where it stopped after interruption or /compact.
 
-**This skill is idempotent and resumable.** It reads state from files, not chat history.
+## Usage
 
-## Pre-flight checks
+```bash
+speckit-autopilot ship --root .
+```
 
-1. If `docs/product-backlog.yaml` does NOT exist → invoke `/bootstrap-product` first
-2. If `docs/autopilot-state.json` does NOT exist → same as above
-3. **Verify Spec Kit is initialised**: check that `.claude/commands/speckit.specify.md` exists
-   - If missing: run `/opt/homebrew/bin/specify init . --ai claude --ignore-agent-tools --no-git`
-   - If `specify` fails or is unavailable: copy bundled template with
-     `cp -r <speckit-autopilot>/templates/spec-kit-claude/. .`
-   - Do NOT proceed until `/speckit.specify` is available as a command
+Then show the JSON output to the user. If the command fails, show the full error.
 
-## Main loop (repeat until done or blocked)
+## What it does
 
-For each iteration:
+For each open feature (in dependency + priority order):
+1. Runs the full Spec Kit workflow: spec → plan → tasks → implement
+2. Runs the QA gate (lint, tests, coverage) — skipped gracefully if no package.json
+3. Marks the feature done and moves to the next
+4. Stops when all features are done, or failures exceed the threshold (default: 3)
 
-1. **Pick next feature**: Read backlog, find next `status: open` feature ordered by:
-   - `priority` (high → medium → low)
-   - `dependsOn` (only pick features whose dependencies are all `done`)
-   - Preserve original order within same priority tier
+Returns JSON: `{ completed, failed, blocked, finalStatus }`.
 
-2. **Update state**: Set `activeFeature`, `currentPhase: spec`, `status: in_progress`
-   in both `docs/autopilot-state.json` and the backlog entry
+## Prerequisites
 
-3. **Create feature branch**: `git checkout -b feature/{feature-id}`
-   (skip if branch already exists – resume scenario)
+- `docs/product-backlog.yaml` must exist — run `/bootstrap-product` first if missing
+- `docs/tech-stack.md` (optional) — create to get idiomatic code generation for your stack
 
-4. **Run Spec Kit workflow** (in order):
-   a. `/speckit.constitution` – only if `.speckit/constitution.md` is missing
-   b. `/speckit.specify` – create spec for this feature
-   c. `/speckit.clarify` – resolve ambiguities
-   d. `/speckit.plan` – create implementation plan
-   e. `/speckit.tasks` – generate task list
-   f. `/speckit.analyze` – technical analysis
-   g. `/speckit.implement` – write the code
+## Monitoring
 
-   After each phase: update `currentPhase` in `autopilot-state.json`
-
-5. **QA gate**: Invoke the `qa-gatekeeper` agent
-   - Run lint, tests, coverage
-   - Update `lastLintPassed`, `lastTestsPassed`, `lastCoverage` in state
-   - If gate FAILS: increment `consecutiveFailures`, log error, retry this feature
-     - After `maxFailures` attempts: mark feature `blocked`, move to next
-
-6. **On success**:
-   - Mark feature `status: done` in backlog
-   - Reset `consecutiveFailures` to 0
-   - Update `docs/roadmap.md` (mark feature done)
-   - Append entry to `docs/iteration-log.md`
-   - Update `autopilot-state.json` (`activeFeature: null`, `status: running`)
-   - Commit: `git commit -m "feat: implement {feature-title} [speckit-autopilot]"`
-
-7. Loop back to step 1
-
-## Completion
-
-When backlog has no more open features:
-- Set `status: completed` in `autopilot-state.json`
-- Print final summary: features shipped, total time, coverage
-
-## Error handling
-
-- Catch and log all errors to `lastError` in `autopilot-state.json` and `iteration-log.md`
-- Never silently swallow errors
-- If a Spec Kit command is unavailable, stop and report — do NOT fall back to inline implementation
+While running, check progress with:
+```bash
+speckit-autopilot status --root .
+```

@@ -1,60 +1,24 @@
 # speckit-autopilot: resume-loop
 
 Resume interrupted autopilot work after a `/compact`, session restart, or manual pause.
-**Source of truth is the file system, not chat history.**
+The `ship` command is idempotent and automatically resumes — this skill is a convenience alias.
 
-## Resume algorithm
+## Usage
 
-1. Read `docs/autopilot-state.json`
-   - If missing or `status: completed`: print message and stop
-   - If `status: bootstrapped` and no active feature: jump to ship-product main loop
+```bash
+speckit-autopilot ship --root .
+```
 
-2. Read `docs/product-backlog.yaml`
-   - Identify the feature with `status: in_progress` (if any)
-   - Cross-check with `activeFeature` in state; state wins on conflict
+Then show the output to the user.
 
-3. Read `docs/iteration-log.md`
-   - Find the last logged phase for the active feature
-   - Cross-check with `currentPhase` in state
+## How it works
 
-4. Print a resume banner:
-   ```
-   === speckit-autopilot RESUME ===
-   Active feature : {activeFeature}
-   Current phase  : {currentPhase}
-   Resuming from  : {resolvedPhase}
-   Failures so far: {consecutiveFailures}/{maxFailures}
-   Last error     : {lastError}
-   ================================
-   ```
+`ship` always reads `docs/autopilot-state.json` and `docs/product-backlog.yaml` first.
+It resets any features stuck in `in_progress` back to `open` and resumes from the next open feature.
+No data is lost between runs.
 
-5. **Verify Spec Kit is initialised** before resuming: check `.claude/commands/speckit.specify.md` exists.
-   If missing, run `/opt/homebrew/bin/specify init . --ai claude --ignore-agent-tools --no-git`
-   or copy bundled template. Do NOT resume until `/speckit.*` commands are available.
+## Check current state first
 
-6. Resume Spec Kit workflow from the correct phase:
-   - `spec`      → start from `/speckit.specify`
-   - `clarify`   → start from `/speckit.clarify`
-   - `plan`      → start from `/speckit.plan`
-   - `tasks`     → start from `/speckit.tasks`
-   - `analyze`   → start from `/speckit.analyze`
-   - `implement` → start from `/speckit.implement`
-   - `qa`        → re-run QA gate only
-   - `done`      → feature was done, move to next
-
-7. Continue the main loop from `ship-product` after resuming the current feature
-
-## Edge cases
-
-- If `consecutiveFailures >= maxFailures`: mark feature `blocked`, move to next
-- If the feature branch does not exist: recreate it from the last known commit or main
-- If Spec Kit artifacts (specs, tasks) are missing for the active feature:
-  restart that feature from phase `spec`
-- If `autopilot-state.json` is corrupted: print error, suggest running bootstrap again
-
-## Compaction safety
-
-This command is specifically designed to work immediately after `/compact`.
-It reads only from files — never from conversation context.
-The `session-start-compact` hook calls `render-active-state.mjs` first;
-`resume-loop` then re-reads the same files for full workflow resumption.
+```bash
+speckit-autopilot status --root .
+```

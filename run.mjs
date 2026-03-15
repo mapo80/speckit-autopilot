@@ -18,8 +18,10 @@ const rootIndex = args.indexOf('--root');
 const root = rootIndex !== -1 ? resolve(args[rootIndex + 1]) : process.cwd();
 const specIndex = args.indexOf('--spec');
 const specFile = specIndex !== -1 ? resolve(args[specIndex + 1]) : null;
+const featureIndex = args.indexOf('--feature');
+const featureTarget = featureIndex !== -1 ? args[featureIndex + 1] : undefined;
 
-const COMMANDS = ['generate', 'bootstrap', 'ship', 'all', 'coverage-report', 'ai-review'];
+const COMMANDS = ['generate', 'bootstrap', 'ship', 'ship-feature', 'all', 'coverage-report', 'ai-review', 'status'];
 
 if (!command || command === '--help' || command === '-h') {
   console.log(`
@@ -28,22 +30,27 @@ speckit-autopilot runner
 Commands:
   generate         Read any spec file and write docs/product.md (requires --spec)
   bootstrap        Parse docs/product.md and create backlog + roadmap + state
-  ship             Implement all open features one by one
+  ship             Implement all open features one by one (auto-resumes after interruption)
+  ship-feature     Implement a single feature (--feature F-001 or next open)
   all              generate (if --spec) + bootstrap + ship in sequence
   coverage-report  Generate docs/coverage-report.md — structural gaps + file counts per feature
   ai-review        Generate docs/ai-review-report.md — AI analysis of implementation vs spec
+  status           Print current phase, backlog summary, and recent log
 
 Options:
-  --root <path>   Target project directory (default: current directory)
-  --spec <path>   Source specification file — required for generate; optional for ai-review
+  --root <path>      Target project directory (default: current directory)
+  --spec <path>      Source specification file — required for generate; optional for ai-review
+  --feature <id>     Feature ID for ship-feature (e.g. F-001); omit to pick next open
 
 Examples:
   node run.mjs generate        --root /path/to/project --spec /path/to/spec.md
   node run.mjs bootstrap       --root /path/to/project
   node run.mjs ship            --root /path/to/project
+  node run.mjs ship-feature    --root /path/to/project --feature F-003
   node run.mjs all             --root /path/to/project --spec /path/to/spec.md
   node run.mjs coverage-report --root /path/to/project
   node run.mjs ai-review       --root /path/to/project --spec /path/to/spec.md
+  node run.mjs status          --root /path/to/project
 `);
   process.exit(0);
 }
@@ -228,6 +235,18 @@ try {
     console.log('--- SHIP PRODUCT ---');
     const result = await shipProduct({ root });
     console.log(JSON.stringify(result, null, 2));
+  }
+
+  if (command === 'ship-feature') {
+    console.log('--- SHIP FEATURE ---');
+    const { shipFeature } = await import('./dist/cli/ship-feature.js');
+    const result = await shipFeature({ root, featureTarget });
+    console.log(JSON.stringify(result, null, 2));
+  }
+
+  if (command === 'status') {
+    const { printStatus } = await import('./dist/cli/status.js');
+    printStatus(root);
   }
 
   if (command === 'coverage-report') {
