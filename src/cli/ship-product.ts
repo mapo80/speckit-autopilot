@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import yaml from "js-yaml";
 import { parseBacklog, Backlog } from "../core/backlog-schema.js";
@@ -337,10 +337,37 @@ export async function shipProduct(opts: ShipProductOptions): Promise<ShipProduct
       phase: "done",
     });
 
-    appendToIterationLog(
-      root,
-      `\n## DONE – ${feature.id} "${feature.title}" – ${new Date().toISOString()}\nCoverage: ${state.lastCoverage ?? "unknown"}\n`
-    );
+    // Persist implementation report for this feature
+    if (!dryRun) {
+      const implVerify = verifyImplementationProducedCode(root, feature.id);
+      const reportDir = join(root, "docs", "specs", feature.id.toLowerCase());
+      mkdirSync(reportDir, { recursive: true });
+      writeFileSync(
+        join(reportDir, "implementation-report.json"),
+        JSON.stringify({
+          featureId: feature.id,
+          completedAt: new Date().toISOString(),
+          changedFiles: implVerify.changedFiles,
+          newFileCount: implVerify.changedFiles.length,
+          qaChecks: gateResult.checks.map((c) => ({ name: c.name, passed: c.passed, details: c.details })),
+          coverage: gateResult.coverage,
+        }, null, 2),
+        "utf8"
+      );
+      const filesSummary = implVerify.changedFiles.length > 0
+        ? `${implVerify.changedFiles.length} (${implVerify.changedFiles.slice(0, 5).map((f) => f.split("/").pop()).join(", ")}${implVerify.changedFiles.length > 5 ? ", ..." : ""})`
+        : "0";
+      const qaSummary = gateResult.checks.map((c) => `${c.name}=${c.passed ? (c.details.startsWith("skipped") ? "skipped" : "pass") : "FAIL"}`).join(", ");
+      appendToIterationLog(
+        root,
+        `\n## DONE – ${feature.id} "${feature.title}" – ${new Date().toISOString()}\n- Files: ${filesSummary}\n- QA: ${qaSummary || "dry-run"}\n- Coverage: ${state.lastCoverage ?? "n/a"}\n`
+      );
+    } else {
+      appendToIterationLog(
+        root,
+        `\n## DONE – ${feature.id} "${feature.title}" – ${new Date().toISOString()}\nCoverage: ${state.lastCoverage ?? "unknown"}\n`
+      );
+    }
   }
 
   return result;

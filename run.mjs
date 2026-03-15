@@ -19,27 +19,31 @@ const root = rootIndex !== -1 ? resolve(args[rootIndex + 1]) : process.cwd();
 const specIndex = args.indexOf('--spec');
 const specFile = specIndex !== -1 ? resolve(args[specIndex + 1]) : null;
 
-const COMMANDS = ['generate', 'bootstrap', 'ship', 'all'];
+const COMMANDS = ['generate', 'bootstrap', 'ship', 'all', 'coverage-report', 'ai-review'];
 
 if (!command || command === '--help' || command === '-h') {
   console.log(`
 speckit-autopilot runner
 
 Commands:
-  generate    Read any spec file and write docs/product.md (requires --spec)
-  bootstrap   Parse docs/product.md and create backlog + roadmap + state
-  ship        Implement all open features one by one
-  all         generate (if --spec) + bootstrap + ship in sequence
+  generate         Read any spec file and write docs/product.md (requires --spec)
+  bootstrap        Parse docs/product.md and create backlog + roadmap + state
+  ship             Implement all open features one by one
+  all              generate (if --spec) + bootstrap + ship in sequence
+  coverage-report  Generate docs/coverage-report.md — structural gaps + file counts per feature
+  ai-review        Generate docs/ai-review-report.md — AI analysis of implementation vs spec
 
 Options:
   --root <path>   Target project directory (default: current directory)
-  --spec <path>   Source specification file (any format) — required for generate
+  --spec <path>   Source specification file — required for generate; optional for ai-review
 
 Examples:
-  node run.mjs generate  --root /path/to/project --spec /path/to/spec.md
-  node run.mjs bootstrap --root /path/to/project
-  node run.mjs ship      --root /path/to/project
-  node run.mjs all       --root /path/to/project --spec /path/to/spec.md
+  node run.mjs generate        --root /path/to/project --spec /path/to/spec.md
+  node run.mjs bootstrap       --root /path/to/project
+  node run.mjs ship            --root /path/to/project
+  node run.mjs all             --root /path/to/project --spec /path/to/spec.md
+  node run.mjs coverage-report --root /path/to/project
+  node run.mjs ai-review       --root /path/to/project --spec /path/to/spec.md
 `);
   process.exit(0);
 }
@@ -224,6 +228,19 @@ try {
     console.log('--- SHIP PRODUCT ---');
     const result = await shipProduct({ root });
     console.log(JSON.stringify(result, null, 2));
+  }
+
+  if (command === 'coverage-report') {
+    console.log('--- COVERAGE REPORT ---');
+    const { coverageReport } = await import('./dist/cli/coverage-report.js');
+    coverageReport(root);
+  }
+
+  if (command === 'ai-review') {
+    console.log('--- AI REVIEW ---');
+    const { aiReview } = await import('./dist/cli/ai-review.js');
+    const effectiveSpec = specFile ?? join(root, 'docs', 'specifiche_finali_sistema_stanze_di_firma_v_3_ascii.md');
+    await aiReview(root, effectiveSpec);
   }
 
   console.log(`\n[speckit-autopilot] done at ${new Date().toISOString()}`);

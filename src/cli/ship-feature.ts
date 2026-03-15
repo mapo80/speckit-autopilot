@@ -1,4 +1,4 @@
-import { readFileSync, existsSync } from "fs";
+import { readFileSync, existsSync, writeFileSync, mkdirSync } from "fs";
 import { join } from "path";
 import yaml from "js-yaml";
 import { parseBacklog, Backlog, Feature } from "../core/backlog-schema.js";
@@ -8,6 +8,7 @@ import { buildBrownfieldSnapshot, writeBrownfieldSnapshot, isBrownfieldRepo } fr
 import { appendToIterationLog } from "../core/compact-state.js";
 import { runAcceptanceGate, applyGateResultToState } from "../core/acceptance-gate.js";
 import { readBacklog, writeBacklog, makeDefaultPhaseRunner } from "./ship-product.js";
+import { verifyImplementationProducedCode } from "../core/spec-kit-runner.js";
 import { bootstrapProduct } from "./bootstrap-product.js";
 
 // ---------------------------------------------------------------------------
@@ -194,9 +195,30 @@ export async function shipFeature(opts: ShipFeatureOptions): Promise<ShipFeature
       currentPhase: null,
       lastError: null,
     });
+
+    // Persist implementation report
+    const implVerify = verifyImplementationProducedCode(root, feature.id);
+    const reportDir = join(root, "docs", "specs", feature.id.toLowerCase());
+    mkdirSync(reportDir, { recursive: true });
+    writeFileSync(
+      join(reportDir, "implementation-report.json"),
+      JSON.stringify({
+        featureId: feature.id,
+        completedAt: new Date().toISOString(),
+        changedFiles: implVerify.changedFiles,
+        newFileCount: implVerify.changedFiles.length,
+        qaChecks: gateResult.checks.map((c) => ({ name: c.name, passed: c.passed, details: c.details })),
+        coverage: gateResult.coverage,
+      }, null, 2),
+      "utf8"
+    );
+    const filesSummary = implVerify.changedFiles.length > 0
+      ? `${implVerify.changedFiles.length} (${implVerify.changedFiles.slice(0, 5).map((f) => f.split("/").pop()).join(", ")}${implVerify.changedFiles.length > 5 ? ", ..." : ""})`
+      : "0";
+    const qaSummary = gateResult.checks.map((c) => `${c.name}=${c.passed ? (c.details.startsWith("skipped") ? "skipped" : "pass") : "FAIL"}`).join(", ");
     appendToIterationLog(
       root,
-      `\n## SHIP-FEATURE DONE – ${feature.id} "${feature.title}" – ${new Date().toISOString()}\n`
+      `\n## SHIP-FEATURE DONE – ${feature.id} "${feature.title}" – ${new Date().toISOString()}\n- Files: ${filesSummary}\n- QA: ${qaSummary || "dry-run"}\n- Coverage: ${gateResult.coverage ?? "n/a"}\n`
     );
   }
 
