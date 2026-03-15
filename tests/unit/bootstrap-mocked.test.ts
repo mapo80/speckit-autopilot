@@ -37,6 +37,7 @@ const mockSpawnSync = jest.fn();
 
 await jest.unstable_mockModule("child_process", () => ({
   spawnSync: mockSpawnSync,
+  spawn: jest.fn(),
 }));
 
 // Dynamically import AFTER setting up mock
@@ -118,6 +119,8 @@ describe("detectSpecKit – mocked spawnSync", () => {
 // specKitAvailable=false → scaffoldSpeckitDirs (line 296) + note (line 303)
 // ---------------------------------------------------------------------------
 
+const mockCallClaude = async () => "# Tech Stack\n\n## Backend\n- Language / Runtime: TypeScript\n";
+
 describe("bootstrapProduct – mocked specKit availability", () => {
   let tmp: string;
   beforeEach(() => {
@@ -138,7 +141,7 @@ describe("bootstrapProduct – mocked specKit availability", () => {
       .mockReturnValueOnce({ status: 0, stdout: "1.0.0", stderr: "" }) // specify version
       .mockReturnValueOnce({ status: 0, stdout: "", stderr: "" }); // specify init
 
-    const result = await bootstrapProduct(tmp);
+    const result = await bootstrapProduct(tmp, mockCallClaude);
     expect(result.success).toBe(true);
     expect(result.specKitAvailable).toBe(true);
     expect(result.specKitInitialized).toBe(true);
@@ -149,7 +152,7 @@ describe("bootstrapProduct – mocked specKit availability", () => {
     // specify version → exit 1 (not available)
     mockSpawnSync.mockReturnValue({ status: 1, stdout: "", stderr: "command not found" });
 
-    const result = await bootstrapProduct(tmp);
+    const result = await bootstrapProduct(tmp, mockCallClaude);
     expect(result.success).toBe(true);
     expect(result.specKitAvailable).toBe(false);
     expect(result.specKitInitialized).toBe(false);
@@ -167,7 +170,7 @@ describe("bootstrapProduct – mocked specKit availability", () => {
       .mockReturnValueOnce({ status: 0, stdout: "1.0.0", stderr: "" }) // specify version
       .mockReturnValueOnce({ status: 1, stdout: "", stderr: "init failed" }); // specify init
 
-    const result = await bootstrapProduct(tmp);
+    const result = await bootstrapProduct(tmp, mockCallClaude);
     expect(result.success).toBe(true);
     expect(result.specKitAvailable).toBe(true);
     // Bundled template copied successfully → specKitInitialized:true
