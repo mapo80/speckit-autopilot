@@ -25,13 +25,19 @@ export interface GenerateTechStackResult {
  * if the section is absent.
  */
 export function extractTechStackSection(productMdContent: string): string | null {
-  // Find "## Tech Stack" section (case-insensitive), stop at next ## heading
-  const match = productMdContent.match(/^##\s+Tech Stack\s*\n([\s\S]*?)(?=^##\s|\Z)/im);
-  if (!match) return null;
-  const body = match[1].trim();
+  // Find the "## Tech Stack" heading line
+  const headingMatch = productMdContent.match(/^##\s+Tech Stack\s*$/im);
+  if (!headingMatch || headingMatch.index === undefined) return null;
+  const afterHeading = headingMatch.index + headingMatch[0].length;
+  // Find the next ## heading (start of the section that follows)
+  const nextHeadingMatch = productMdContent.slice(afterHeading).match(/^##\s/m);
+  const end = nextHeadingMatch?.index !== undefined
+    ? afterHeading + nextHeadingMatch.index
+    : productMdContent.length;
+  const body = productMdContent.slice(afterHeading, end).trim();
   if (!body) return null;
-  // Normalize sub-heading levels: ### → ## so the output is consistent
-  // (product.md uses ### under ## Tech Stack, output uses ## under # Tech Stack)
+  // Normalize sub-heading levels: ### → ##, #### → ###
+  // (product.md uses ### under ## Tech Stack; output uses ## under # Tech Stack)
   const normalized = body.replace(/^###\s/gm, "## ").replace(/^####\s/gm, "### ");
   return `# Tech Stack\n\n${normalized}\n`;
 }
