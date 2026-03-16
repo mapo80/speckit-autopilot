@@ -6,7 +6,7 @@ import { makeEmptyBacklog, Backlog, Feature, featureSlug } from "../core/backlog
 import { StateStore } from "../core/state-store.js";
 import { generateRoadmap, renderRoadmapMarkdown } from "../core/roadmap-generator.js";
 import { spawnSync } from "child_process";
-import { auditBootstrap, callClaudeForReview } from "./audit.js";
+import { auditBootstrap, callClaudeForReview, callClaudeForText } from "./audit.js";
 import { generateTechStack, generateTechStackFromSnapshot } from "./generate-techstack.js";
 import { isBrownfieldRepo, buildBrownfieldSnapshot, writeBrownfieldSnapshot } from "../core/brownfield-snapshot.js";
 
@@ -295,7 +295,7 @@ ${productSummary}`;
 
 export async function generateProjectStructure(
   root: string,
-  callClaude: (prompt: string) => Promise<string>
+  callClaude: (prompt: string) => Promise<string> = callClaudeForText
 ): Promise<{ created: boolean }> {
   const projectStructurePath = join(root, "docs", "project-structure.md");
   if (existsSync(projectStructurePath)) return { created: false };

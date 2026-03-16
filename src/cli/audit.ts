@@ -61,6 +61,32 @@ export function callClaudeForReview(prompt: string): Promise<string> {
   });
 }
 
+// callClaudeForText — Claude call that disables all tools so output is pure text.
+// Use when you need Claude to print content (not write files).
+// ---------------------------------------------------------------------------
+
+export function callClaudeForText(prompt: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn("claude", ["--print", "--dangerously-skip-permissions", "--allowedTools", ""], {
+      shell: false,
+      env: { ...process.env },
+    });
+    proc.stdin.write(prompt);
+    proc.stdin.end();
+    let stdout = "";
+    let stderr = "";
+    proc.stdout.on("data", (c: Buffer) => { stdout += c.toString(); });
+    proc.stderr.on("data", (c: Buffer) => { stderr += c.toString(); });
+    const timer = setTimeout(() => { proc.kill(); reject(new Error("claude CLI timed out")); }, 600_000);
+    proc.on("close", (code) => {
+      clearTimeout(timer);
+      if (code === 0 || stdout.trim()) resolve(stdout.trim());
+      else reject(new Error(`claude CLI exited ${code}: ${stderr.slice(0, 300)}`));
+    });
+    proc.on("error", (err) => { clearTimeout(timer); reject(err); });
+  });
+}
+
 // ---------------------------------------------------------------------------
 // scanGeneratedFiles — list all non-docs source files via git or fallback
 // ---------------------------------------------------------------------------
