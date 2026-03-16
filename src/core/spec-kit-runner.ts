@@ -3,6 +3,7 @@ import { join, dirname } from "path";
 import { spawnSync, spawn } from "child_process";
 import type { Phase } from "./state-store.js";
 import { copyBundledTemplate } from "../cli/bootstrap-product.js";
+import { parseStackSections } from "./tech-stack-commands.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -298,6 +299,160 @@ Output the files now using the <<<FILE:>>> format above. Nothing else.`;
 }
 
 // ---------------------------------------------------------------------------
+// Layer-aware implement helpers
+// ---------------------------------------------------------------------------
+
+interface PlatformLayer {
+  name: string;        // "backend" | "frontend" | "mobile"
+  label: string;       // "C# .NET Backend"
+  /** Regex tested against each task line to decide if it belongs to this layer. */
+  taskPattern: RegExp;
+  /** Human-readable constraint added to the prompt. */
+  dirConstraint: string;
+}
+
+/**
+ * Detect platform layers from tech-stack.md content.
+ * Returns layers ordered: backend first, frontend second, mobile third.
+ * Each feature should be implemented layer by layer in this order.
+ */
+export function detectPlatformLayers(techStackContent: string): PlatformLayer[] {
+  const sections = parseStackSections(techStackContent);
+  const allText = techStackContent.toLowerCase();
+  const layers: PlatformLayer[] = [];
+
+  // Backend — C# / .NET / ASP.NET
+  const backendBody = (sections["Backend"] ?? "").toLowerCase();
+  if (backendBody.includes("c#") || backendBody.includes(".net") || backendBody.includes("asp.net") || allText.includes("dotnet")) {
+    layers.push({
+      name: "backend",
+      label: "C# .NET Backend",
+      taskPattern: /Controllers\/|Services\/|Dal\/|Migrations\/|Shared\/|\.cs\b|DbContext|Repository|Entity|Dto|Middleware|Filter|Program\.cs/i,
+      dirConstraint: "src/SignHub.Api/, src/SignHub.Services/, src/SignHub.Dal/, src/SignHub.Shared/ — ALL C# files",
+    });
+  }
+
+  // Backend — Go
+  if (allText.includes("golang") || allText.includes(" go ") || sections["Backend"]?.toLowerCase().includes("go ")) {
+    layers.push({
+      name: "backend",
+      label: "Go Backend",
+      taskPattern: /\.go\b|internal\/|cmd\/|pkg\//i,
+      dirConstraint: "All .go files in internal/, cmd/, pkg/",
+    });
+  }
+
+  // Backend — Python
+  if (allText.includes("python") || allText.includes("fastapi") || allText.includes("django") || allText.includes("flask")) {
+    layers.push({
+      name: "backend",
+      label: "Python Backend",
+      taskPattern: /\.py\b|routers\/|models\/|schemas\/|services\/|repositories\//i,
+      dirConstraint: "All .py files in app/, src/, routers/, models/",
+    });
+  }
+
+  // Frontend — React / Vue / Angular / Next.js
+  const frontendBody = (sections["Frontend"] ?? "").toLowerCase();
+  if (frontendBody.includes("react") || frontendBody.includes("vue") || frontendBody.includes("angular") || frontendBody.includes("next.js") || frontendBody.includes("typescript")) {
+    layers.push({
+      name: "frontend",
+      label: "React / TypeScript Frontend",
+      taskPattern: /\.tsx?$|signhub-web\/|src\/components\/|src\/pages\/|src\/hooks\/|src\/stores?\/|\.css|\.scss/i,
+      dirConstraint: "src/signhub-web/ — ALL React/TypeScript files (.tsx, .ts, .css)",
+    });
+  }
+
+  // Mobile — Flutter / Dart
+  const mobileBody = (sections["Mobile"] ?? "").toLowerCase();
+  if (mobileBody.includes("flutter") || mobileBody.includes("dart")) {
+    layers.push({
+      name: "mobile",
+      label: "Flutter / Dart Mobile",
+      taskPattern: /\.dart$|signhub-mobile\/|lib\/screens\/|lib\/widgets\/|lib\/providers\/|lib\/services\/|lib\/models\//i,
+      dirConstraint: "src/signhub-mobile/lib/ — ALL Dart files (.dart)",
+    });
+  }
+
+  return layers;
+}
+
+/**
+ * Filter tasks.md content to only include tasks relevant to the given layer.
+ * Always keeps non-task lines (headers, blank lines, section titles).
+ */
+export function filterTasksByLayer(tasksContent: string, layer: PlatformLayer): string {
+  const lines = tasksContent.split("\n");
+  const filtered = lines.filter((line) => {
+    const trimmed = line.trim();
+    // Keep non-task lines (headers, blank lines, notes)
+    if (!trimmed.startsWith("- [")) return true;
+    return layer.taskPattern.test(line);
+  });
+  // Remove runs of multiple blank lines
+  return filtered.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+/**
+ * Build a layer-specific implement prompt.
+ * Like buildImplementPrompt but scoped to a single platform layer.
+ */
+function buildImplementLayerPrompt(
+  layer: PlatformLayer,
+  featureTitle: string,
+  featureId: string,
+  specContent: string,
+  planContent: string,
+  layerTasksContent: string,
+  techStack: string,
+  snapshotContent: string | null,
+  acceptanceCriteria: string[],
+  projectStructure: string | null,
+  codemap: string | null
+): string {
+  return `You are an expert ${layer.label} developer. Your job is to produce source code as plain text output ONLY.
+
+IMPORTANT CONSTRAINTS:
+- Do NOT use any tools, file writing, or bash commands.
+- Do NOT ask for permissions or confirmations.
+- Output ONLY plain text using the file format below.
+- Implement ONLY the ${layer.label} layer — files in: ${layer.dirConstraint}
+- Do NOT skip any task listed below, even if similar files appear in the codebase context.
+
+FEATURE: ${featureTitle}
+FEATURE ID: ${featureId}
+LAYER: ${layer.label}
+${buildCriteriaBlock(acceptanceCriteria)}
+TECH STACK:
+${techStack}
+${buildProjectStructureBlock(projectStructure)}${buildCodemapBlock(codemap)}${snapshotContent ? `\nEXISTING FILES (reference for patterns only — implement all tasks below regardless):\n${snapshotContent}\n` : ""}
+SPECIFICATION:
+${specContent}
+
+IMPLEMENTATION PLAN:
+${planContent}
+
+TASKS FOR THIS LAYER (${layer.label}):
+${layerTasksContent}
+
+YOUR TASK:
+Generate ALL source files for the ${layer.label} layer of "${featureTitle}".
+
+MANDATORY OUTPUT FORMAT — use this exact format for every file:
+<<<FILE: relative/path/to/file>>>
+// source code here
+<<<END_FILE>>>
+
+Requirements:
+1. Implement EVERY task listed above — do not skip any
+2. File paths must be under: ${layer.dirConstraint}
+3. All code must be complete and runnable — no pseudocode, no TODOs
+4. Export all public types and functions
+
+Output the files now using the <<<FILE:>>> format above. Nothing else.`;
+}
+
+// ---------------------------------------------------------------------------
 // File extraction from AI response
 // ---------------------------------------------------------------------------
 
@@ -450,13 +605,32 @@ export function verifyImplementationProducedCode(
     };
   }
 
-  // Non-git fallback: compare against codebase-snapshot.md to find truly new files
+  // Non-git fallback: compare against codebase-snapshot.md to find truly new files.
+  // Only count files in src/ as "application code" — test files alone are not sufficient.
   const newSourceFiles = detectNewSourceFiles(root);
-  if (newSourceFiles.length > 0) {
+  const newAppFiles = newSourceFiles.filter(
+    (f) =>
+      !f.startsWith("tests/") &&
+      !f.includes(".Tests/") &&
+      !f.includes(".Tests\\") &&
+      !f.endsWith("Tests.cs") &&
+      !f.endsWith("_test.dart") &&
+      !f.endsWith(".test.ts") &&
+      !f.endsWith(".spec.ts")
+  );
+  if (newAppFiles.length > 0) {
     return {
       hasNewFiles: true,
+      changedFiles: newAppFiles,
+      diffSummary: `${newAppFiles.length} new source file(s) in src/`,
+    };
+  }
+  if (newSourceFiles.length > 0) {
+    // Test files only — no application code in src/
+    return {
+      hasNewFiles: false,
       changedFiles: newSourceFiles,
-      diffSummary: `${newSourceFiles.length} new source file(s) detected`,
+      diffSummary: `Test files only (${newSourceFiles.length}): no application code produced in src/`,
     };
   }
 
@@ -711,13 +885,11 @@ export class SpecKitRunner {
   // Phase: implement
   async runImplement(featureId: string, featureTitle: string, acceptanceCriteria: string[] = []): Promise<string[]> {
     const specsDir = this.specsDir(featureId);
-    // Truncate large artifacts to avoid exceeding claude CLI prompt limits.
-    // Keep the most actionable content: full tasks list (usually short) +
-    // first 150 lines of spec + first 100 lines of plan.
-    const truncate = (s: string, lines: number) =>
-      s.split("\n").slice(0, lines).join("\n");
-    const specContent = truncate(readArtifact(join(specsDir, "spec.md")) ?? `Feature: ${featureTitle}`, 150);
-    const planContent = truncate(readArtifact(join(specsDir, "plan.md")) ?? `Plan for: ${featureTitle}`, 100);
+    // Pass full artifacts — no truncation. Plans can be 300+ lines and the
+    // architecture context in the later sections is critical for multi-platform
+    // features. Prompt stays well under claude's context limit (~9-15K tokens).
+    const specContent = readArtifact(join(specsDir, "spec.md")) ?? `Feature: ${featureTitle}`;
+    const planContent = readArtifact(join(specsDir, "plan.md")) ?? `Plan for: ${featureTitle}`;
     const tasksContent = readArtifact(join(specsDir, "tasks.md")) ?? `Tasks for: ${featureTitle}`;
 
     const commandContent =
@@ -786,6 +958,69 @@ export class SpecKitRunner {
     return writtenPaths;
   }
 
+  /**
+   * Layer-aware implement: run one Claude call per platform layer (backend →
+   * frontend → mobile), each scoped to only its tasks and directory constraints.
+   *
+   * Falls back to the single-call `runImplement()` when no platform layers are
+   * detected (e.g. single-stack projects without a tech-stack.md).
+   */
+  async runImplementByLayer(featureId: string, featureTitle: string, acceptanceCriteria: string[] = []): Promise<string[]> {
+    const layers = detectPlatformLayers(this.techStack);
+
+    // No layers detected → single-call fallback
+    if (layers.length === 0) {
+      return this.runImplement(featureId, featureTitle, acceptanceCriteria);
+    }
+
+    const specsDir = this.specsDir(featureId);
+    const specContent = readArtifact(join(specsDir, "spec.md")) ?? `Feature: ${featureTitle}`;
+    const planContent = readArtifact(join(specsDir, "plan.md")) ?? `Plan for: ${featureTitle}`;
+    const tasksContent = readArtifact(join(specsDir, "tasks.md")) ?? `Tasks for: ${featureTitle}`;
+
+    const allWrittenPaths: string[] = [];
+
+    for (const layer of layers) {
+      const layerTasks = filterTasksByLayer(tasksContent, layer);
+
+      // Count actual task lines — skip if this layer has no tasks
+      const taskLineCount = layerTasks.split("\n").filter((l) => l.trim().startsWith("- [")).length;
+      if (taskLineCount === 0) continue;
+
+      const prompt = buildImplementLayerPrompt(
+        layer,
+        featureTitle,
+        featureId,
+        specContent,
+        planContent,
+        layerTasks,
+        this.techStack,
+        this.snapshotContent,
+        acceptanceCriteria,
+        this.projectStructureContent,
+        this.codemapContent
+      );
+
+      const response = await this.callClaude(prompt);
+      const generatedFiles = extractGeneratedFiles(response);
+
+      for (const file of generatedFiles) {
+        const fullPath = join(this.root, file.path);
+        writeArtifact(fullPath, file.content);
+        allWrittenPaths.push(fullPath);
+      }
+    }
+
+    if (allWrittenPaths.length === 0) {
+      throw new Error(
+        `No source files generated for "${featureTitle}" (${featureId}) across ${layers.length} layer(s). ` +
+        `Claude did not produce any <<<FILE: path>>> blocks. Check the prompts and try again.`
+      );
+    }
+
+    return allWrittenPaths;
+  }
+
   // Run all phases from startFromPhase onward
   async runPhases(
     featureId: string,
@@ -843,7 +1078,7 @@ export class SpecKitRunner {
             break;
 
           case "implement": {
-            await this.runImplement(featureId, featureTitle, acceptanceCriteria);
+            await this.runImplementByLayer(featureId, featureTitle, acceptanceCriteria);
             break;
           }
 

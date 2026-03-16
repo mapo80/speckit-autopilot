@@ -107,7 +107,7 @@ describe("verifyImplementationProducedCode", () => {
     expect(typeof result.diffSummary).toBe("string");
   });
 
-  it("returns hasNewFiles:true when spec artifacts exist (fallback)", () => {
+  it("spec artifacts alone do NOT count as application code (hasNewFiles:false)", () => {
     const specsDir = join(tmp, "docs", "specs", "f-001");
     mkdirSync(specsDir, { recursive: true });
     writeFileSync(join(specsDir, "spec.md"), "# Spec", "utf8");
@@ -115,7 +115,7 @@ describe("verifyImplementationProducedCode", () => {
     writeFileSync(join(specsDir, "tasks.md"), "# Tasks", "utf8");
 
     const result = verifyImplementationProducedCode(tmp, "F-001");
-    expect(result.changedFiles.length).toBeGreaterThanOrEqual(0);
+    expect(result.hasNewFiles).toBe(false);
     expect(typeof result.diffSummary).toBe("string");
   });
 
@@ -123,6 +123,42 @@ describe("verifyImplementationProducedCode", () => {
     const result = verifyImplementationProducedCode(tmp, "NONE");
     expect(typeof result.diffSummary).toBe("string");
     expect(result.diffSummary.length).toBeGreaterThan(0);
+  });
+
+  it("returns hasNewFiles:false when only test files are new (test-only implementation)", () => {
+    // Simulate: Claude created test files but no src/ implementation
+    const testsDir = join(tmp, "tests", "MyProject.Tests", "Controllers");
+    mkdirSync(testsDir, { recursive: true });
+    writeFileSync(join(testsDir, "RolesControllerTests.cs"), "// test", "utf8");
+
+    // snapshot is empty (no prior files)
+    mkdirSync(join(tmp, "docs"), { recursive: true });
+    writeFileSync(join(tmp, "docs", "codebase-snapshot.md"), "# Codebase File Tree\n", "utf8");
+
+    const result = verifyImplementationProducedCode(tmp, "rbac-feature");
+    expect(result.hasNewFiles).toBe(false);
+    expect(result.diffSummary).toContain("Test files only");
+  });
+
+  it("returns hasNewFiles:true when src/ files exist alongside test files", () => {
+    // Simulate: Claude created both src and test files
+    const srcDir = join(tmp, "src", "SignHub.Api", "Controllers");
+    mkdirSync(srcDir, { recursive: true });
+    writeFileSync(join(srcDir, "RolesController.cs"), "// impl", "utf8");
+
+    const testsDir = join(tmp, "tests", "MyProject.Tests");
+    mkdirSync(testsDir, { recursive: true });
+    writeFileSync(join(testsDir, "RolesControllerTests.cs"), "// test", "utf8");
+
+    // snapshot is empty
+    mkdirSync(join(tmp, "docs"), { recursive: true });
+    writeFileSync(join(tmp, "docs", "codebase-snapshot.md"), "# Codebase File Tree\n", "utf8");
+
+    const result = verifyImplementationProducedCode(tmp, "rbac-feature");
+    expect(result.hasNewFiles).toBe(true);
+    // changedFiles should contain only the src file, not the test file
+    expect(result.changedFiles.some((f) => f.includes("RolesController.cs"))).toBe(true);
+    expect(result.changedFiles.every((f) => !f.includes("Tests.cs"))).toBe(true);
   });
 });
 

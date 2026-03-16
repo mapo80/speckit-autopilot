@@ -2,6 +2,7 @@ import { spawnSync } from "child_process";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { AutopilotState, AcceptanceCriteriaConfig } from "./state-store.js";
+import { detectStackCommands, runStackCommand } from "./tech-stack-commands.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -180,6 +181,39 @@ export function runAcceptanceGate(root: string, state: AutopilotState): GateResu
   const checks: GateCheckResult[] = [];
   let coverage: number | null = null;
 
+  // Stack-aware path: read docs/tech-stack.md and derive build/test commands
+  const techStackPath = join(root, "docs", "tech-stack.md");
+  if (existsSync(techStackPath)) {
+    const techStackContent = readFileSync(techStackPath, "utf8");
+    const stackCmds = detectStackCommands(root, techStackContent);
+
+    if (stackCmds.length > 0) {
+      // Run build commands first (fail-fast), then test/lint
+      const ordered = [
+        ...stackCmds.filter((c) => c.type === "build"),
+        ...stackCmds.filter((c) => c.type === "test"),
+        ...stackCmds.filter((c) => c.type === "lint"),
+      ];
+      for (const cmd of ordered) {
+        const result = runStackCommand(cmd);
+        checks.push({ name: cmd.label, passed: result.passed, details: result.details });
+        // Fail-fast on build errors — no point running tests if build is broken
+        if (!result.passed && cmd.type === "build") break;
+      }
+
+      // Acceptance items always checked
+      checks.push(checkAcceptanceItems(criteria));
+
+      const passed = checks.every((c) => c.passed);
+      const failed = checks.filter((c) => !c.passed).map((c) => c.name);
+      const summary = passed
+        ? "All acceptance criteria met"
+        : `Gate FAILED: ${failed.join(", ")}`;
+      return { passed, checks, coverage, summary };
+    }
+  }
+
+  // Fallback: legacy package.json behaviour (Node.js projects without tech-stack.md)
   // Lint
   if (criteria.requireLintPass !== false) {
     checks.push(runLintCheck(root));

@@ -9,6 +9,8 @@ import { spawnSync } from "child_process";
 import { auditBootstrap, callClaudeForReview } from "./audit.js";
 import { generateTechStack, generateTechStackFromSnapshot } from "./generate-techstack.js";
 import { isBrownfieldRepo, buildBrownfieldSnapshot, writeBrownfieldSnapshot } from "../core/brownfield-snapshot.js";
+import { checkEnvironment } from "../core/environment-checker.js";
+import { scaffoldProject } from "../core/project-scaffolder.js";
 
 // ---------------------------------------------------------------------------
 // Spec Kit detection
@@ -441,6 +443,25 @@ export async function bootstrapProduct(
   try { auditBootstrap(root); } catch { /* best-effort */ }
 
   const notes: string[] = [];
+
+  // Environment check — warn about missing tools (non-blocking)
+  if (existsSync(techStackPath)) {
+    const techStackContent = readFileSync(techStackPath, "utf8");
+    const envResults = checkEnvironment(techStackContent);
+    for (const t of envResults.filter((r) => !r.installed)) {
+      notes.push(`WARNING: '${t.tool}' not found in PATH — install before running ship. ${t.installHint}`);
+    }
+    // Scaffold missing project config files (.sln, .csproj, pubspec.yaml, package.json)
+    const projectStructurePath = join(root, "docs", "project-structure.md");
+    if (existsSync(projectStructurePath)) {
+      const projectStructureContent = readFileSync(projectStructurePath, "utf8");
+      const scaffoldResult = scaffoldProject(root, techStackContent, projectStructureContent);
+      for (const e of scaffoldResult.errors) {
+        notes.push(`Scaffold warning: ${e}`);
+      }
+    }
+  }
+
   if (!specKitAvailable) {
     notes.push("NOTE: specify CLI not found – using SDK-only mode.");
   } else if (!specKitInitialized) {

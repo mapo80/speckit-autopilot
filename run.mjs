@@ -7,7 +7,27 @@
 //   node run.mjs all       --root /path/to/project --spec /path/to/spec.md
 
 import { bootstrapProduct } from './dist/cli/bootstrap-product.js';
-import { resolve } from 'path';
+import { resolve, join, dirname } from 'path';
+import { spawnSync } from 'child_process';
+import { readdirSync, existsSync } from 'fs';
+
+// Ensure 'claude' CLI is resolvable — if not in PATH, search the VSCode extension directory.
+(function ensureClaudeInPath() {
+  const check = spawnSync('claude', ['--version'], { shell: false, stdio: 'pipe' });
+  if (check.status === 0) return; // already in PATH
+  const extDir = join(process.env.HOME ?? '', '.vscode', 'extensions');
+  if (!existsSync(extDir)) return;
+  const candidates = readdirSync(extDir)
+    .filter(d => d.startsWith('anthropic.claude-code-'))
+    .map(d => join(extDir, d, 'resources', 'native-binary', 'claude'))
+    .filter(p => existsSync(p))
+    .sort();
+  if (candidates.length > 0) {
+    const bin = candidates.at(-1);
+    process.env.PATH = `${dirname(bin)}:${process.env.PATH}`;
+    console.log(`[speckit-autopilot] claude resolved via VSCode extension: ${bin}`);
+  }
+})();
 
 const args = process.argv.slice(2);
 const command = args[0];

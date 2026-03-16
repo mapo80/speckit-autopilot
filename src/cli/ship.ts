@@ -2,6 +2,8 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSy
 import { join } from "path";
 import yaml from "js-yaml";
 import { parseBacklog, Backlog, Feature } from "../core/backlog-schema.js";
+import { checkEnvironment } from "../core/environment-checker.js";
+import { detectStackCommands } from "../core/tech-stack-commands.js";
 import {
   markFeatureStatus,
   setFeatureBranch,
@@ -12,7 +14,7 @@ import {
 import { StateStore, Phase } from "../core/state-store.js";
 import { appendToIterationLog } from "../core/compact-state.js";
 import { runAcceptanceGate, applyGateResultToState } from "../core/acceptance-gate.js";
-import { SpecKitRunner, ensureSpecKitInitialized, verifyImplementationProducedCode } from "../core/spec-kit-runner.js";
+import { SpecKitRunner, ensureSpecKitInitialized, verifyImplementationProducedCode, CodeVerificationResult } from "../core/spec-kit-runner.js";
 import { auditFeature } from "./audit.js";
 import { buildBrownfieldSnapshot, writeBrownfieldSnapshot, isBrownfieldRepo } from "../core/brownfield-snapshot.js";
 
@@ -118,7 +120,7 @@ export interface PhaseRunnerOptions {
   dryRun?: boolean;
 }
 
-export type PhaseRunner = (opts: PhaseRunnerOptions) => Promise<{ success: boolean; phase: Phase; error?: string }>;
+export type PhaseRunner = (opts: PhaseRunnerOptions) => Promise<{ success: boolean; phase: Phase; error?: string; implVerify?: CodeVerificationResult }>;
 
 export function makeDefaultPhaseRunner(apiKey?: string): PhaseRunner {
   return async (opts) => {
@@ -181,7 +183,7 @@ export function makeDefaultPhaseRunner(apiKey?: string): PhaseRunner {
       return { success: false, phase: result.phase, error: result.error };
     }
 
-    // Verify implementation produced real code
+    // Verify implementation produced real code (before snapshot update)
     const verification = verifyImplementationProducedCode(root, featureId);
     if (!verification.hasNewFiles) {
       return {
@@ -191,7 +193,7 @@ export function makeDefaultPhaseRunner(apiKey?: string): PhaseRunner {
       };
     }
 
-    return { success: true, phase: result.phase };
+    return { success: true, phase: result.phase, implVerify: verification };
   };
 }
 
@@ -346,8 +348,10 @@ async function runOneFeature(opts: RunOneFeatureOpts): Promise<RunOneResult> {
   const coverage = gateResult.coverage?.toString() ?? null;
 
   if (!dryRun) {
-    // 10. Implementation report
-    const implVerify = verifyImplementationProducedCode(root, feature.id);
+    // 10. Implementation report — reuse the result from the gate check (before snapshot update)
+    // Calling verifyImplementationProducedCode again after updateCodebaseSnapshot would always
+    // find zero new files (they're already in the snapshot), falling back to spec artifacts.
+    const implVerify = phaseResult.implVerify ?? verifyImplementationProducedCode(root, feature.id);
     const reportDir = join(root, "docs", "specs", feature.id.toLowerCase());
     mkdirSync(reportDir, { recursive: true });
     writeFileSync(
@@ -364,7 +368,7 @@ async function runOneFeature(opts: RunOneFeatureOpts): Promise<RunOneResult> {
     );
 
     const filesSummary = implVerify.changedFiles.length > 0
-      ? `${implVerify.changedFiles.length} (${implVerify.changedFiles.slice(0, 5).map((f) => f.split("/").pop()).join(", ")}${implVerify.changedFiles.length > 5 ? ", ..." : ""})`
+      ? `${implVerify.changedFiles.length} (${implVerify.changedFiles.slice(0, 5).map((f: string) => f.split("/").pop()).join(", ")}${implVerify.changedFiles.length > 5 ? ", ..." : ""})`
       : "0";
     const qaSummary = gateResult.checks
       .map((c) => `${c.name}=${c.passed ? (c.details.startsWith("skipped") ? "skipped" : "pass") : "FAIL"}`)
@@ -434,7 +438,27 @@ export async function ship(opts: ShipOptions): Promise<ShipResult> {
     store.createInitial(mode);
   }
 
-  // 4. Set status running
+  // 4. Pre-flight: environment check — hard block if required tools are missing
+  const techStackPath = join(root, "docs", "tech-stack.md");
+  if (existsSync(techStackPath)) {
+    const techStack = readFileSync(techStackPath, "utf8");
+    const missing = checkEnvironment(techStack).filter((r) => !r.installed);
+    if (missing.length > 0) {
+      const lines = missing.map((t) => `  - ${t.tool}: ${t.installHint}`).join("\n");
+      throw new Error(
+        `Required tools not installed — cannot run ship:\n${lines}\n\nInstall the missing tools and retry.`
+      );
+    }
+    // Warn (non-fatal) when no build/test commands can be derived yet
+    if (detectStackCommands(root, techStack).length === 0) {
+      console.warn(
+        "[ship] WARNING: no build/test commands detected. " +
+        "Project scaffold files may be missing. Run: node run.mjs bootstrap --root " + root
+      );
+    }
+  }
+
+  // 5. Set status running
   let state = store.update({ status: "running" });
 
   let backlog = readBacklog(root);
