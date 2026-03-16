@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync } from "fs";
 import { join } from "path";
 import yaml from "js-yaml";
 import { parseBacklog, Backlog, Feature } from "../core/backlog-schema.js";
@@ -53,6 +53,39 @@ export interface ShipOptions {
   featureTarget?: string;   // ID (F-001) or title substring; absent → loop all open features
   dryRun?: boolean;
   phaseRunner?: PhaseRunner;
+}
+
+// ---------------------------------------------------------------------------
+// Codebase snapshot
+// ---------------------------------------------------------------------------
+
+const SNAPSHOT_EXCLUDE = new Set([".git", "docs", "node_modules", ".specify", ".speckit", ".claude"]);
+
+function collectFiles(dir: string, base: string, results: string[]): void {
+  let entries: string[];
+  try { entries = readdirSync(dir); } catch { return; }
+  for (const entry of entries) {
+    const full = join(dir, entry);
+    const rel = join(base, entry);
+    if (base === "" && SNAPSHOT_EXCLUDE.has(entry)) continue;
+    try {
+      const st = statSync(full);
+      if (st.isDirectory()) {
+        collectFiles(full, rel, results);
+      } else if (!entry.endsWith(".DS_Store")) {
+        results.push(rel);
+      }
+    } catch { /* skip unreadable entries */ }
+  }
+}
+
+export function updateCodebaseSnapshot(root: string): void {
+  const files: string[] = [];
+  collectFiles(root, "", files);
+  files.sort();
+  const content = `# Codebase File Tree\n\nUpdated: ${new Date().toISOString()}\n\n${files.map((f) => `- ${f}`).join("\n")}\n`;
+  mkdirSync(join(root, "docs"), { recursive: true });
+  writeFileSync(join(root, "docs", "codebase-snapshot.md"), content, "utf8");
 }
 
 // ---------------------------------------------------------------------------
@@ -263,7 +296,10 @@ async function runOneFeature(opts: RunOneFeatureOpts): Promise<RunOneResult> {
     };
   }
 
-  // 7. QA gate
+  // 7. Update codebase snapshot so subsequent features see newly created files
+  if (!dryRun) updateCodebaseSnapshot(root);
+
+  // 8. QA gate
   state = store.update({ currentPhase: "qa" });
   const gateResult = dryRun
     ? { passed: true, checks: [], coverage: null, summary: "dry-run" }

@@ -233,7 +233,7 @@ describe("auditBootstrap", () => {
     const root = makeTmp(); dirs.push(root);
     writeProductMd(root, `# P\n\n## In Scope\n\n### Feature 1 - X\n- criterion\n\n## Delivery Preference\n1. Feature 1\n`);
     writeBacklogYaml(root, [
-      { id: "F-001", title: "Feature 1 - X", acceptanceCriteria: ["criterion"], status: "open" },
+      { id: "feature-one", title: "Feature 1 - X", acceptanceCriteria: ["criterion"], status: "open" },
     ]);
     writeFileSync(join(root, "docs", "autopilot-state.json"), JSON.stringify({ status: "bootstrapped" }), "utf8");
     const result = auditBootstrap(root);
@@ -246,7 +246,7 @@ describe("auditBootstrap", () => {
     const root = makeTmp(); dirs.push(root);
     writeProductMd(root, `# P\n\n## In Scope\n\n### Feature 1 - X\n- c\n\n### Feature 2 - Y\n- c\n\n## Delivery Preference\n1. Feature 1\n`);
     writeBacklogYaml(root, [
-      { id: "F-001", title: "Feature 1 - X", acceptanceCriteria: ["c"], status: "open" },
+      { id: "feature-one", title: "Feature 1 - X", acceptanceCriteria: ["c"], status: "open" },
       // Feature 2 missing from backlog
     ]);
     writeFileSync(join(root, "docs", "autopilot-state.json"), "{}", "utf8");
@@ -258,7 +258,7 @@ describe("auditBootstrap", () => {
     const root = makeTmp(); dirs.push(root);
     writeProductMd(root, `# P\n\n## In Scope\n\n### Feature 1 - X\n- c\n\n## Delivery Preference\n1. Feature 1\n`);
     writeBacklogYaml(root, [
-      { id: "F-001", title: "Feature 1 - X", acceptanceCriteria: [], status: "open" },
+      { id: "feature-one", title: "Feature 1 - X", acceptanceCriteria: [], status: "open" },
     ]);
     writeFileSync(join(root, "docs", "autopilot-state.json"), "{}", "utf8");
     const result = auditBootstrap(root);
@@ -268,7 +268,7 @@ describe("auditBootstrap", () => {
   it("warns when autopilot-state.json is missing", () => {
     const root = makeTmp(); dirs.push(root);
     writeBacklogYaml(root, [
-      { id: "F-001", title: "X", acceptanceCriteria: ["c"], status: "open" },
+      { id: "feature-one", title: "X", acceptanceCriteria: ["c"], status: "open" },
     ]);
     // no state file written
     const result = auditBootstrap(root);

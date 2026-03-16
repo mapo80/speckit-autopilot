@@ -103,11 +103,16 @@ describe("buildBacklogFromProduct", () => {
     expect(backlog.features.length).toBeGreaterThan(0);
   });
 
-  it("assigns sequential IDs starting from F-001", () => {
+  it("assigns slug IDs derived from feature titles", () => {
     const parsed = parseProductMd(SAMPLE_PRODUCT_MD);
     const backlog = buildBacklogFromProduct(parsed);
     const ids = backlog.features.map((f) => f.id);
-    expect(ids[0]).toBe("F-001");
+    // First feature "Feature 1 - Task CRUD" → slug "task-crud"
+    expect(ids[0]).toBe("task-crud");
+    // All IDs must match the kebab-case slug format
+    for (const id of ids) {
+      expect(id).toMatch(/^[a-z][a-z0-9-]{2,63}$/);
+    }
   });
 
   it("all features start with status open", () => {
@@ -182,10 +187,12 @@ describe("bootstrapProduct", () => {
     mkdirSync(join(tmp, "docs"), { recursive: true });
     writeFileSync(join(tmp, "docs", "product.md"), SAMPLE_PRODUCT_MD, "utf8");
     writeFileSync(join(tmp, "docs", "tech-stack.md"), "# Existing Stack\n", "utf8");
+    // Pre-create project-structure.md so generateProjectStructure also skips
+    writeFileSync(join(tmp, "docs", "project-structure.md"), "# Existing Structure\n", "utf8");
 
     let callCount = 0;
     await bootstrapProduct(tmp, async () => { callCount++; return "# Tech Stack\n"; });
-    // callClaude should NOT be called for tech-stack.md since it already exists
+    // callClaude should NOT be called since both tech-stack.md and project-structure.md already exist
     expect(callCount).toBe(0);
     const { readFileSync } = await import("fs");
     expect(readFileSync(join(tmp, "docs", "tech-stack.md"), "utf8")).toBe("# Existing Stack\n");
@@ -353,6 +360,8 @@ describe("bootstrapProduct — brownfield auto-detection", () => {
     mkdirSync(join(root, "docs"), { recursive: true });
     writeFileSync(join(root, "docs", "product.md"), SAMPLE_PRODUCT_MD_BROWNFIELD, "utf8");
     writeFileSync(join(root, "docs", "tech-stack.md"), "# Existing\n", "utf8");
+    // Pre-create project-structure.md so generateProjectStructure also skips
+    writeFileSync(join(root, "docs", "project-structure.md"), "# Existing Structure\n", "utf8");
 
     let called = false;
     await bootstrapProduct(root, async () => { called = true; return "# Tech Stack\n"; });

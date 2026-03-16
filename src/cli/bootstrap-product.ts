@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, cpSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import yaml from "js-yaml";
-import { makeEmptyBacklog, Backlog, Feature, featureNextId } from "../core/backlog-schema.js";
+import { makeEmptyBacklog, Backlog, Feature, featureSlug } from "../core/backlog-schema.js";
 import { StateStore } from "../core/state-store.js";
 import { generateRoadmap, renderRoadmapMarkdown } from "../core/roadmap-generator.js";
 import { spawnSync } from "child_process";
@@ -221,7 +221,7 @@ export function buildBacklogFromProduct(parsed: ParsedProduct): Backlog {
 
   for (const epic of parsed.epics) {
     for (const rawFeat of epic.features) {
-      const id = featureNextId({ ...backlog, features: allFeatures });
+      const id = featureSlug(rawFeat.title, allFeatures.map((f) => f.id));
       const deliveryIdx = parsed.deliveryOrder.findIndex((t) =>
         rawFeat.title.toLowerCase().includes(t.toLowerCase()) ||
         t.toLowerCase().includes(rawFeat.title.toLowerCase().split(" ").slice(-1)[0])
@@ -264,6 +264,56 @@ export function buildBacklogFromProduct(parsed: ParsedProduct): Backlog {
 
   backlog.features = allFeatures;
   return backlog;
+}
+
+// ---------------------------------------------------------------------------
+// Project structure generation
+// ---------------------------------------------------------------------------
+
+export function buildProjectStructurePrompt(productContent: string, techStackContent: string): string {
+  const productSummary = productContent.split("\n").slice(0, 50).join("\n");
+  return `You are generating docs/project-structure.md for a new software project.
+
+Given the tech stack and product summary below, define the EXACT canonical folder structure.
+
+REQUIREMENTS:
+- One single structure — no alternatives, no "or" choices
+- Include a "## RULES (MANDATORY)" section at the end that forbids creating duplicate layers
+  (e.g. NEVER create src/Api/ if the canonical path is src/SignHub.Api/)
+- List files that must exist EXACTLY ONCE (e.g. DbContext, Program.cs, app.module.ts)
+- Be specific about naming conventions (PascalCase controllers, kebab-case components, etc.)
+- Paths must be relative from project root
+
+Output ONLY the markdown for docs/project-structure.md — no preamble, no closing remarks.
+
+TECH STACK:
+${techStackContent}
+
+PRODUCT SUMMARY (first 50 lines of product.md):
+${productSummary}`;
+}
+
+export async function generateProjectStructure(
+  root: string,
+  callClaude: (prompt: string) => Promise<string>
+): Promise<{ created: boolean }> {
+  const projectStructurePath = join(root, "docs", "project-structure.md");
+  if (existsSync(projectStructurePath)) return { created: false };
+
+  const productMdPath = join(root, "docs", "product.md");
+  const techStackPath = join(root, "docs", "tech-stack.md");
+
+  if (!existsSync(productMdPath) || !existsSync(techStackPath)) {
+    return { created: false };
+  }
+
+  const productContent = readFileSync(productMdPath, "utf8");
+  const techStackContent = readFileSync(techStackPath, "utf8");
+  const prompt = buildProjectStructurePrompt(productContent, techStackContent);
+  const output = await callClaude(prompt);
+
+  writeFileSync(projectStructurePath, output, "utf8");
+  return { created: true };
 }
 
 // ---------------------------------------------------------------------------
@@ -331,6 +381,9 @@ export async function bootstrapProduct(
     // Greenfield or snapshot already present: generate from product.md if absent
     await generateTechStack(root, callClaude, { overwrite: false });
   }
+
+  // Generate canonical project structure
+  await generateProjectStructure(root, callClaude);
 
   // Create initial state
   const store = new StateStore(root);

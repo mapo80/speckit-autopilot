@@ -20,7 +20,7 @@ export type Complexity = z.infer<typeof ComplexitySchema>;
 export const AcceptanceCriterionSchema = z.string().min(1);
 
 export const FeatureSchema = z.object({
-  id: z.string().regex(/^F-\d{3,}$/, "Feature ID must match F-NNN"),
+  id: z.string().regex(/^[a-z][a-z0-9-]{2,63}$/, "Feature ID must be a kebab-case slug"),
   title: z.string().min(1),
   epic: z.string().min(1),
   status: FeatureStatusSchema.default("open"),
@@ -70,14 +70,30 @@ export function makeEmptyBacklog(): Backlog {
   };
 }
 
-export function featureNextId(backlog: Backlog): string {
-  if (backlog.features.length === 0) return "F-001";
-  const nums = backlog.features.map((f) => {
-    const m = f.id.match(/^F-(\d+)$/);
-    return m ? parseInt(m[1], 10) : 0;
-  });
-  const next = Math.max(...nums) + 1;
-  return `F-${String(next).padStart(3, "0")}`;
+export function featureSlug(title: string, existingSlugs: string[]): string {
+  let slug = title
+    .replace(/^Feature\s+\d+\s*[-–]\s*/i, "")
+    .replace(/^[^:]+:\s*/i, "")
+    .replace(/[^\w\s-]/g, " ")
+    .trim()
+    .toLowerCase()
+    .replace(/_+/g, "-")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 40);
+  // Trim incomplete last word if truncated
+  if (slug.length === 40) {
+    slug = slug.replace(/-[^-]*$/, "");
+  }
+  // Ensure minimum length
+  if (slug.length < 3) slug = (slug + "feature").slice(0, 40);
+  let candidate = slug;
+  let i = 2;
+  while (existingSlugs.includes(candidate)) {
+    candidate = `${slug}-${i++}`;
+  }
+  return candidate;
 }
 
 export function priorityWeight(p: Priority): number {

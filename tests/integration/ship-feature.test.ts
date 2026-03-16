@@ -59,32 +59,32 @@ function setupBrownfield(root: string, features: Feature[]): void {
 describe("resolveTargetFeature", () => {
   const backlog: Backlog = {
     ...makeEmptyBacklog(),
-    features: [makeFeature("F-001"), { ...makeFeature("F-002"), title: "User Authentication" }],
+    features: [makeFeature("feature-one"), { ...makeFeature("feature-two"), title: "User Authentication" }],
   };
 
   it("returns the first open feature when no target given", () => {
     const f = resolveTargetFeature(backlog);
-    expect(f?.id).toBe("F-001");
+    expect(f?.id).toBe("feature-one");
   });
 
   it("resolves by feature ID", () => {
-    const f = resolveTargetFeature(backlog, "F-002");
-    expect(f?.id).toBe("F-002");
+    const f = resolveTargetFeature(backlog, "feature-two");
+    expect(f?.id).toBe("feature-two");
   });
 
   it("resolves by title substring", () => {
     const f = resolveTargetFeature(backlog, "Authentication");
-    expect(f?.id).toBe("F-002");
+    expect(f?.id).toBe("feature-two");
   });
 
   it("returns undefined for unknown target", () => {
-    expect(resolveTargetFeature(backlog, "F-999")).toBeUndefined();
+    expect(resolveTargetFeature(backlog, "feature-dep")).toBeUndefined();
   });
 
   it("returns undefined when no open features and no target", () => {
     const doneBacklog: Backlog = {
       ...makeEmptyBacklog(),
-      features: [{ ...makeFeature("F-001"), status: "done" }],
+      features: [{ ...makeFeature("feature-one"), status: "done" }],
     };
     expect(resolveTargetFeature(doneBacklog)).toBeUndefined();
   });
@@ -100,33 +100,33 @@ describe("shipFeature – greenfield", () => {
   afterEach(() => rmSync(tmp, { recursive: true, force: true }));
 
   it("returns error when feature not found in backlog", async () => {
-    setupGreenfield(tmp, [makeFeature("F-001")]);
-    const result = await shipFeature({ root: tmp, featureTarget: "F-999", dryRun: true });
+    setupGreenfield(tmp, [makeFeature("feature-one")]);
+    const result = await shipFeature({ root: tmp, featureTarget: "feature-dep", dryRun: true });
     expect(result.success).toBe(false);
-    expect(result.error).toContain("F-999");
+    expect(result.error).toContain("feature-dep");
   });
 
   it("ships a feature successfully (dry run)", async () => {
-    setupGreenfield(tmp, [makeFeature("F-001")]);
-    const result = await shipFeature({ root: tmp, featureTarget: "F-001", dryRun: true });
+    setupGreenfield(tmp, [makeFeature("feature-one")]);
+    const result = await shipFeature({ root: tmp, featureTarget: "feature-one", dryRun: true });
     expect(result.success).toBe(true);
-    expect(result.featureId).toBe("F-001");
+    expect(result.featureId).toBe("feature-one");
   });
 
   it("ships a feature by ID target", async () => {
-    setupGreenfield(tmp, [makeFeature("F-001"), makeFeature("F-002")]);
-    const result = await shipFeature({ root: tmp, featureTarget: "F-002", dryRun: true });
-    expect(result.featureId).toBe("F-002");
+    setupGreenfield(tmp, [makeFeature("feature-one"), makeFeature("feature-two")]);
+    const result = await shipFeature({ root: tmp, featureTarget: "feature-two", dryRun: true });
+    expect(result.featureId).toBe("feature-two");
   });
 
   it("reports mode as greenfield for a clean directory", async () => {
-    setupGreenfield(tmp, [makeFeature("F-001")]);
+    setupGreenfield(tmp, [makeFeature("feature-one")]);
     const result = await shipFeature({ root: tmp, dryRun: true });
     expect(result.mode).toBe("greenfield");
   });
 
   it("marks feature done in backlog on success (non-dry-run)", async () => {
-    setupGreenfield(tmp, [makeFeature("F-001")]);
+    setupGreenfield(tmp, [makeFeature("feature-one")]);
     // Inject a success runner so the test doesn't require ANTHROPIC_API_KEY
     const successRunner = async () => ({ success: true, phase: "implement" as const });
     await shipFeature({ root: tmp, dryRun: false, phaseRunner: successRunner });
@@ -135,13 +135,13 @@ describe("shipFeature – greenfield", () => {
   });
 
   it("includes iterations in result on success", async () => {
-    setupGreenfield(tmp, [makeFeature("F-001")]);
-    const result = await shipFeature({ root: tmp, featureTarget: "F-001", dryRun: true });
+    setupGreenfield(tmp, [makeFeature("feature-one")]);
+    const result = await shipFeature({ root: tmp, featureTarget: "feature-one", dryRun: true });
     expect(result.iterations.length).toBeGreaterThan(0);
   });
 
   it("writes iteration log on success (non-dry-run)", async () => {
-    setupGreenfield(tmp, [makeFeature("F-001")]);
+    setupGreenfield(tmp, [makeFeature("feature-one")]);
     // Inject a success runner so the test doesn't require ANTHROPIC_API_KEY
     const successRunner = async () => ({ success: true, phase: "implement" as const });
     await shipFeature({ root: tmp, dryRun: false, phaseRunner: successRunner });
@@ -159,13 +159,13 @@ describe("shipFeature – brownfield", () => {
   afterEach(() => rmSync(tmp, { recursive: true, force: true }));
 
   it("detects brownfield mode", async () => {
-    setupBrownfield(tmp, [makeFeature("F-001")]);
+    setupBrownfield(tmp, [makeFeature("feature-one")]);
     const result = await shipFeature({ root: tmp, dryRun: true });
     expect(result.mode).toBe("brownfield");
   });
 
   it("writes brownfield-snapshot.md in non-dry-run mode", async () => {
-    setupBrownfield(tmp, [makeFeature("F-001")]);
+    setupBrownfield(tmp, [makeFeature("feature-one")]);
     const noopRunner = async () => ({ success: true, phase: "implement" as const });
     const result = await shipFeature({ root: tmp, dryRun: false, phaseRunner: noopRunner });
     expect(result.brownfieldSnapshotWritten).toBe(true);
@@ -173,13 +173,13 @@ describe("shipFeature – brownfield", () => {
   });
 
   it("does not write snapshot in dry-run mode", async () => {
-    setupBrownfield(tmp, [makeFeature("F-001")]);
+    setupBrownfield(tmp, [makeFeature("feature-one")]);
     const result = await shipFeature({ root: tmp, dryRun: true });
     expect(result.brownfieldSnapshotWritten).toBe(false);
   });
 
   it("ships brownfield feature successfully", async () => {
-    setupBrownfield(tmp, [makeFeature("F-001")]);
+    setupBrownfield(tmp, [makeFeature("feature-one")]);
     const result = await shipFeature({ root: tmp, dryRun: true });
     expect(result.success).toBe(true);
   });
@@ -250,16 +250,16 @@ describe("formatStatus", () => {
     mkdirSync(join(tmp, "docs"), { recursive: true });
     const store = new StateStore(tmp);
     store.createInitial("greenfield");
-    store.update({ activeFeature: "F-001", currentPhase: "plan", status: "running" });
+    store.update({ activeFeature: "feature-one", currentPhase: "plan", status: "running" });
 
     const backlog: Backlog = {
       ...makeEmptyBacklog(),
-      features: [{ ...makeFeature("F-001"), status: "in_progress" }, makeFeature("F-002")],
+      features: [{ ...makeFeature("feature-one"), status: "in_progress" }, makeFeature("feature-two")],
     };
     writeFileSync(join(tmp, "docs", "product-backlog.yaml"), yaml.dump(backlog), "utf8");
 
     const output = formatStatus(tmp);
-    expect(output).toContain("F-001");
+    expect(output).toContain("feature-one");
     expect(output).toContain("plan");
     expect(output).toContain("running");
     expect(output).toContain("In progress: 1");

@@ -59,10 +59,10 @@ describe("readBacklog", () => {
   });
 
   it("reads a valid backlog", () => {
-    setupProject(tmp, [makeFeature("F-001")]);
+    setupProject(tmp, [makeFeature("feature-one")]);
     const backlog = readBacklog(tmp);
     expect(backlog.version).toBe("1");
-    expect(backlog.features[0].id).toBe("F-001");
+    expect(backlog.features[0].id).toBe("feature-one");
   });
 });
 
@@ -73,10 +73,10 @@ describe("writeBacklog", () => {
 
   it("writes YAML that can be read back", () => {
     mkdirSync(join(tmp, "docs"), { recursive: true });
-    const backlog: Backlog = { ...makeEmptyBacklog(), features: [makeFeature("F-001")] };
+    const backlog: Backlog = { ...makeEmptyBacklog(), features: [makeFeature("feature-one")] };
     writeBacklog(tmp, backlog);
     const read = readBacklog(tmp);
-    expect(read.features[0].id).toBe("F-001");
+    expect(read.features[0].id).toBe("feature-one");
   });
 });
 
@@ -95,13 +95,13 @@ describe("shipProduct", () => {
   });
 
   it("completes when all features are done", async () => {
-    setupProject(tmp, [makeFeature("F-001", "medium", [], "done")]);
+    setupProject(tmp, [makeFeature("feature-one", "medium", [], "done")]);
     const result = await shipProduct({ root: tmp, phaseRunner: makeSuccessRunner(), dryRun: true });
     expect(result.finalStatus).toBe("completed");
   });
 
   it("ships a single open feature", async () => {
-    setupProject(tmp, [makeFeature("F-001")]);
+    setupProject(tmp, [makeFeature("feature-one")]);
     const result = await shipProduct({ root: tmp, phaseRunner: makeSuccessRunner(), dryRun: true });
     expect(result.completed).toBe(1);
     expect(result.finalStatus).toBe("completed");
@@ -114,18 +114,18 @@ describe("shipProduct", () => {
       return { success: true, phase: "implement" };
     };
     setupProject(tmp, [
-      makeFeature("F-001", "low"),
-      makeFeature("F-002", "high"),
-      makeFeature("F-003", "medium"),
+      makeFeature("feature-one", "low"),
+      makeFeature("feature-two", "high"),
+      makeFeature("feature-three", "medium"),
     ]);
     await shipProduct({ root: tmp, phaseRunner: runner, dryRun: true });
-    expect(shipped[0]).toBe("F-002"); // high first
-    expect(shipped[1]).toBe("F-003"); // then medium
-    expect(shipped[2]).toBe("F-001"); // then low
+    expect(shipped[0]).toBe("feature-two"); // high first
+    expect(shipped[1]).toBe("feature-three"); // then medium
+    expect(shipped[2]).toBe("feature-one"); // then low
   });
 
   it("increments consecutive failures on phase runner failure", async () => {
-    setupProject(tmp, [makeFeature("F-001")]);
+    setupProject(tmp, [makeFeature("feature-one")]);
     // After maxFailures (3) consecutive failures the feature is blocked and failures reset to 0.
     // Verify via result.failed counter instead of state (which resets after block).
     const result = await shipProduct({ root: tmp, phaseRunner: makeFailRunner(), dryRun: true });
@@ -133,7 +133,7 @@ describe("shipProduct", () => {
   });
 
   it("marks feature blocked after maxFailures failures", async () => {
-    setupProject(tmp, [makeFeature("F-001")]);
+    setupProject(tmp, [makeFeature("feature-one")]);
     const store = new StateStore(tmp);
     store.update({ maxFailures: 2 });
 
@@ -146,20 +146,20 @@ describe("shipProduct", () => {
   });
 
   it("is idempotent: calling twice on completed project returns completed", async () => {
-    setupProject(tmp, [makeFeature("F-001", "medium", [], "done")]);
+    setupProject(tmp, [makeFeature("feature-one", "medium", [], "done")]);
     await shipProduct({ root: tmp, phaseRunner: makeSuccessRunner(), dryRun: true });
     const result2 = await shipProduct({ root: tmp, phaseRunner: makeSuccessRunner(), dryRun: true });
     expect(result2.finalStatus).toBe("completed");
   });
 
   it("writes iteration log entries", async () => {
-    setupProject(tmp, [makeFeature("F-001")]);
+    setupProject(tmp, [makeFeature("feature-one")]);
     await shipProduct({ root: tmp, phaseRunner: makeSuccessRunner(), dryRun: true });
     expect(existsSync(join(tmp, "docs", "iteration-log.md"))).toBe(true);
   });
 
   it("updates backlog feature status to done on success", async () => {
-    setupProject(tmp, [makeFeature("F-001")]);
+    setupProject(tmp, [makeFeature("feature-one")]);
     // Disable gating so QA gate passes in a temp directory without a real project
     const store = new StateStore(tmp);
     store.update({ gatingEnabled: false });
@@ -181,11 +181,11 @@ describe("makeDefaultPhaseRunner (non-dryRun paths)", () => {
   it("dryRun path returns success with implement as last phase", async () => {
     const { makeDefaultPhaseRunner } = await import("../../src/cli/ship.js");
     const runner = makeDefaultPhaseRunner();
-    setupProject(tmp, [makeFeature("F-001")]);
+    setupProject(tmp, [makeFeature("feature-one")]);
 
     const result = await runner({
       root: tmp,
-      featureId: "F-001",
+      featureId: "feature-one",
       featureTitle: "Test Feature",
       startFromPhase: "spec",
       dryRun: true,
@@ -198,11 +198,11 @@ describe("makeDefaultPhaseRunner (non-dryRun paths)", () => {
   it("dryRun with startFromPhase:plan slices phases correctly", async () => {
     const { makeDefaultPhaseRunner } = await import("../../src/cli/ship.js");
     const runner = makeDefaultPhaseRunner();
-    setupProject(tmp, [makeFeature("F-001")]);
+    setupProject(tmp, [makeFeature("feature-one")]);
 
     const result = await runner({
       root: tmp,
-      featureId: "F-001",
+      featureId: "feature-one",
       featureTitle: "Test Feature",
       startFromPhase: "plan",
       dryRun: true,
@@ -217,11 +217,11 @@ describe("makeDefaultPhaseRunner (non-dryRun paths)", () => {
 
     mkdirSync(join(tmp, ".specify"), { recursive: true });
     mkdirSync(join(tmp, ".claude", "commands"), { recursive: true });
-    setupProject(tmp, [makeFeature("F-001")]);
+    setupProject(tmp, [makeFeature("feature-one")]);
 
     const result = await runner({
       root: tmp,
-      featureId: "F-001",
+      featureId: "feature-one",
       featureTitle: "Test Feature",
       startFromPhase: "spec",
       dryRun: true,
@@ -238,14 +238,14 @@ describe("makeDefaultPhaseRunner (non-dryRun paths)", () => {
     mkdirSync(join(tmp, ".specify"), { recursive: true });
     mkdirSync(join(tmp, ".claude", "commands"), { recursive: true });
     // Setup project WITH a backlog containing acceptance criteria
-    const feature = makeFeature("F-001");
+    const feature = makeFeature("feature-one");
     feature.acceptanceCriteria = ["Must do X", "Must do Y"];
     setupProject(tmp, [feature]);
 
     // dryRun:true so we don't call real claude but verify backlog reading works
     const result = await runner({
       root: tmp,
-      featureId: "F-001",
+      featureId: "feature-one",
       featureTitle: "Feature F-001",
       startFromPhase: "spec",
       dryRun: true,
@@ -269,7 +269,7 @@ describe("makeDefaultPhaseRunner (non-dryRun paths)", () => {
     // dryRun:true so we don't call real claude
     const result = await runner({
       root: tmp,
-      featureId: "F-001",
+      featureId: "feature-one",
       featureTitle: "Feature F-001",
       startFromPhase: "spec",
       dryRun: true,

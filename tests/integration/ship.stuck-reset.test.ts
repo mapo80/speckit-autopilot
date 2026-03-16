@@ -57,7 +57,7 @@ describe("ship – stuck in_progress features are reset (BUG#9)", () => {
 
   it("resets in_progress feature to open then ships it as done", async () => {
     // Simulate a previously-interrupted run: F-001 is stuck in_progress
-    setupProject(tmp, [makeFeature("F-001", "in_progress")]);
+    setupProject(tmp, [makeFeature("feature-one", "in_progress")]);
 
     const result = await ship({ root: tmp, dryRun: true, phaseRunner: successRunner });
 
@@ -70,7 +70,7 @@ describe("ship – stuck in_progress features are reset (BUG#9)", () => {
   });
 
   it("writes STUCK RESET entry to iteration log", async () => {
-    setupProject(tmp, [makeFeature("F-001", "in_progress")]);
+    setupProject(tmp, [makeFeature("feature-one", "in_progress")]);
 
     await ship({ root: tmp, dryRun: true, phaseRunner: successRunner });
 
@@ -82,31 +82,31 @@ describe("ship – stuck in_progress features are reset (BUG#9)", () => {
   });
 
   it("includes the stuck feature's ID in the STUCK RESET log entry", async () => {
-    setupProject(tmp, [makeFeature("F-001", "in_progress")]);
+    setupProject(tmp, [makeFeature("feature-one", "in_progress")]);
 
     await ship({ root: tmp, dryRun: true, phaseRunner: successRunner });
 
     const logContent = readFileSync(join(tmp, "docs", "iteration-log.md"), "utf8");
-    expect(logContent).toContain("F-001");
+    expect(logContent).toContain("feature-one");
   });
 
   it("resets multiple stuck features and logs all of them", async () => {
     setupProject(tmp, [
-      makeFeature("F-001", "in_progress"),
-      makeFeature("F-002", "in_progress"),
-      makeFeature("F-003", "open"),
+      makeFeature("feature-one", "in_progress"),
+      makeFeature("feature-two", "in_progress"),
+      makeFeature("feature-three", "open"),
     ]);
 
     await ship({ root: tmp, dryRun: true, phaseRunner: successRunner });
 
     const logContent = readFileSync(join(tmp, "docs", "iteration-log.md"), "utf8");
     expect(logContent).toContain("STUCK RESET");
-    expect(logContent).toContain("F-001");
-    expect(logContent).toContain("F-002");
+    expect(logContent).toContain("feature-one");
+    expect(logContent).toContain("feature-two");
   });
 
   it("does NOT write STUCK RESET when no features are in_progress", async () => {
-    setupProject(tmp, [makeFeature("F-001", "open")]);
+    setupProject(tmp, [makeFeature("feature-one", "open")]);
 
     await ship({ root: tmp, dryRun: true, phaseRunner: successRunner });
 
@@ -120,8 +120,8 @@ describe("ship – stuck in_progress features are reset (BUG#9)", () => {
 
   it("ships all features (including reset ones) in a single call", async () => {
     setupProject(tmp, [
-      makeFeature("F-001", "in_progress"),
-      makeFeature("F-002", "open"),
+      makeFeature("feature-one", "in_progress"),
+      makeFeature("feature-two", "open"),
     ]);
 
     const shippedIds: string[] = [];
@@ -133,20 +133,20 @@ describe("ship – stuck in_progress features are reset (BUG#9)", () => {
     await ship({ root: tmp, dryRun: true, phaseRunner: trackingRunner });
 
     // Both features should have been shipped
-    expect(shippedIds).toContain("F-001");
-    expect(shippedIds).toContain("F-002");
+    expect(shippedIds).toContain("feature-one");
+    expect(shippedIds).toContain("feature-two");
   });
 
   it("leaves done features untouched by stuck reset", async () => {
     setupProject(tmp, [
-      makeFeature("F-001", "done"),
-      makeFeature("F-002", "in_progress"),
+      makeFeature("feature-one", "done"),
+      makeFeature("feature-two", "in_progress"),
     ]);
 
     await ship({ root: tmp, dryRun: true, phaseRunner: successRunner });
 
     const backlog = readBacklog(tmp);
-    const f1 = backlog.features.find((f) => f.id === "F-001")!;
+    const f1 = backlog.features.find((f) => f.id === "feature-one")!;
     expect(f1.status).toBe("done"); // must remain done
   });
 });

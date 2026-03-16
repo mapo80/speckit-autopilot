@@ -343,7 +343,7 @@ describe("auditAll – full orchestration", () => {
   it("creates audit-report.md with empty backlog (no done features to audit)", async () => {
     writeTechStack(tmp);
     writeBacklogYaml(tmp, [
-      { id: "F-001", title: "Open Feature", status: "open", acceptanceCriteria: ["works"] },
+      { id: "open-feature", title: "Open Feature", status: "open", acceptanceCriteria: ["works"] },
     ]);
     writeFileSync(join(tmp, "docs", "autopilot-state.json"), JSON.stringify({ status: "running" }), "utf8");
 
@@ -359,12 +359,12 @@ describe("auditAll – full orchestration", () => {
   it("runs feature audits for done features using custom callClaude", async () => {
     writeTechStack(tmp);
     writeBacklogYaml(tmp, [
-      { id: "F-001", title: "Done Feature", status: "done", acceptanceCriteria: ["works"] },
+      { id: "done-feature", title: "Done Feature", status: "done", acceptanceCriteria: ["works"] },
     ]);
     writeFileSync(join(tmp, "docs", "autopilot-state.json"), JSON.stringify({ status: "running" }), "utf8");
 
-    // Write spec + tasks for F-001 so audit doesn't get skipped
-    const specsDir = join(tmp, "docs", "specs", "f-001");
+    // Write spec + tasks for done-feature so audit doesn't get skipped
+    const specsDir = join(tmp, "docs", "specs", "done-feature");
     mkdirSync(specsDir, { recursive: true });
     writeFileSync(join(specsDir, "spec.md"), "# Spec\nReqs.", "utf8");
 
@@ -377,7 +377,7 @@ describe("auditAll – full orchestration", () => {
     const reportPath = join(tmp, "docs", "audit-report.md");
     expect(existsSync(reportPath)).toBe(true);
     const content = readFileSync(reportPath, "utf8");
-    expect(content).toContain("F-001");
+    expect(content).toContain("done-feature");
   });
 
   it("includes structural gaps section in report", async () => {

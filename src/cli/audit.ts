@@ -167,6 +167,101 @@ export function detectStructuralGaps(root: string, techStack: string): Structura
 }
 
 // ---------------------------------------------------------------------------
+// checkStructuralCompliance — pure static check, no Claude needed
+// ---------------------------------------------------------------------------
+
+export interface StructuralComplianceResult {
+  violations: string[];
+  warnings: string[];
+}
+
+/**
+ * Parse the first-level allowed directories from project-structure.md.
+ * Looks for lines like `src/SignHub.Api/...` or `src/` and extracts the root segment.
+ */
+function extractAllowedRoots(structureMd: string): string[] {
+  const roots = new Set<string>();
+  // Bullet lines that start with a path: `- src/...` or `src/...` inside code blocks
+  const pathRe = /^\s*[-*]?\s+([a-zA-Z][a-zA-Z0-9_.-]*\/)/gm;
+  let m: RegExpExecArray | null;
+  while ((m = pathRe.exec(structureMd)) !== null) {
+    roots.add(m[1]);
+  }
+  // Fallback defaults if nothing parsed
+  if (roots.size === 0) {
+    for (const r of ["src/", "tests/", "frontend/", "mobile/"]) roots.add(r);
+  }
+  return [...roots];
+}
+
+/**
+ * Parse NEVER rules from the MANDATORY section of project-structure.md.
+ * Returns patterns like "src/Api/" that files must NOT start with.
+ */
+function extractNeverPatterns(structureMd: string): string[] {
+  const patterns: string[] = [];
+  const mandatorySection = structureMd.split(/##\s+RULES/i)[1] ?? "";
+  // Lines with NEVER: extract path tokens
+  const neverRe = /NEVER\s+create\s+([^\s,]+)/gi;
+  let m: RegExpExecArray | null;
+  while ((m = neverRe.exec(mandatorySection)) !== null) {
+    patterns.push(m[1].replace(/[`'"]/g, ""));
+  }
+  return patterns;
+}
+
+export function checkStructuralCompliance(
+  generatedFiles: string[],
+  projectStructureMd: string | null
+): StructuralComplianceResult {
+  if (!projectStructureMd || generatedFiles.length === 0) {
+    return { violations: [], warnings: [] };
+  }
+
+  const allowedRoots = extractAllowedRoots(projectStructureMd);
+  const neverPatterns = extractNeverPatterns(projectStructureMd);
+  const violations: string[] = [];
+  const warnings: string[] = [];
+
+  for (const file of generatedFiles) {
+    // Check against NEVER patterns first
+    for (const pattern of neverPatterns) {
+      if (file.startsWith(pattern) || file.includes(`/${pattern}`)) {
+        violations.push(`\`${file}\` — matches NEVER rule: "${pattern}"`);
+      }
+    }
+    // Check that file starts with one of the allowed root dirs
+    const allowed = allowedRoots.some((r) => file.startsWith(r));
+    if (!allowed) {
+      // Distinguish docs/specs (expected) vs truly rogue paths
+      if (!file.startsWith("docs/") && !file.startsWith(".")) {
+        warnings.push(`\`${file}\` — not under a canonical root (${allowedRoots.slice(0, 4).join(", ")}...)`);
+      }
+    }
+  }
+
+  return { violations, warnings };
+}
+
+function renderComplianceSection(result: StructuralComplianceResult, fileCount: number): string {
+  const lines: string[] = [`### 🏗 Structural Compliance`, ``];
+  if (result.violations.length === 0 && result.warnings.length === 0) {
+    lines.push(`✅ All ${fileCount} file(s) respect the canonical structure.`);
+  } else {
+    if (result.violations.length > 0) {
+      lines.push(`❌ ${result.violations.length} VIOLATION(S) (must fix before merge):`);
+      for (const v of result.violations) lines.push(`- ${v}`);
+      lines.push(``);
+    }
+    if (result.warnings.length > 0) {
+      lines.push(`⚠ ${result.warnings.length} WARNING(S):`);
+      for (const w of result.warnings) lines.push(`- ${w}`);
+    }
+  }
+  return lines.join("\n");
+}
+
+// ---------------------------------------------------------------------------
 // auditGenerate — static check of docs/product.md
 // ---------------------------------------------------------------------------
 
@@ -307,10 +402,12 @@ export async function auditFeature(
   const implReportPath = join(specsDir, "implementation-report.json");
   let fileList = "No implementation-report.json found — file list unavailable.";
   let fileCount = 0;
+  let generatedFiles: string[] = [];
   if (existsSync(implReportPath)) {
     try {
       const report = JSON.parse(readFileSync(implReportPath, "utf8")) as { changedFiles: string[]; newFileCount: number };
       fileCount = report.newFileCount;
+      generatedFiles = report.changedFiles;
       fileList = report.changedFiles.length > 0
         ? report.changedFiles.join("\n")
         : "No files recorded in report.";
@@ -319,12 +416,21 @@ export async function auditFeature(
     }
   }
 
+  // Static structural compliance check (no Claude, always fast)
+  const projectStructureMd = existsSync(join(root, "docs", "project-structure.md"))
+    ? readFileSync(join(root, "docs", "project-structure.md"), "utf8")
+    : null;
+  const compliance = checkStructuralCompliance(generatedFiles, projectStructureMd);
+  const complianceSection = renderComplianceSection(compliance, fileCount);
+
   if (!specContent && !tasksContent) {
     const note = `# Audit – ${featureId}\n\n> Skipped: no spec.md or tasks.md found.\n`;
     mkdirSync(specsDir, { recursive: true });
     writeFileSync(auditPath, note, "utf8");
     return { featureId, featureTitle, auditPath, skipped: true };
   }
+
+  const hasViolations = compliance.violations.length > 0;
 
   const prompt = [
     `You are auditing feature ${featureId} – "${featureTitle}".`,
@@ -338,12 +444,16 @@ export async function auditFeature(
     `## Files generated (${fileCount}):`,
     fileList,
     ``,
+    `## Structural compliance (static check):`,
+    complianceSection,
+    ``,
     `## Tech stack:`,
     techStack,
     ``,
     `Audit task:`,
     `1. For each acceptance criterion in the spec, is there a corresponding file or code path?`,
     `2. What critical pieces are missing (missing endpoints, services, tests, config files)?`,
+    hasViolations ? `3. The structural compliance check found violations — flag them in Recommendations.` : "",
     `3. Overall completeness score: 1-5`,
     ``,
     `Format your response as markdown with these sections:`,
@@ -351,7 +461,7 @@ export async function auditFeature(
     `### ⚠ Gaps`,
     `### 🔧 Recommendations`,
     `### Score: X/5`,
-  ].join("\n");
+  ].filter((l) => l !== "").join("\n");
 
   try {
     const review = await callClaude(prompt);
@@ -360,6 +470,8 @@ export async function auditFeature(
       ``,
       `Generated: ${new Date().toISOString()}`,
       `Files reviewed: ${fileCount}`,
+      ``,
+      complianceSection,
       ``,
       review,
     ].join("\n");
@@ -465,7 +577,10 @@ export async function auditAll(root: string): Promise<void> {
     console.log(`[audit] Reviewing ${feature.id} – "${feature.title}"...`);
     const result = await auditFeature(root, feature.id, feature.title);
 
-    const score = result.skipped ? "—" : result.error ? "✗ error" : "→ see audit.md";
+    // Check if the audit.md contains structural violations
+    const auditContent = existsSync(result.auditPath) ? readFileSync(result.auditPath, "utf8") : "";
+    const hasViolation = auditContent.includes("❌");
+    const score = result.skipped ? "—" : result.error ? "✗ error" : hasViolation ? "❌ violations" : "→ see audit.md";
     lines.push(`| ${feature.id} | ${feature.title.slice(0, 50)} | ${score} | [audit.md](specs/${feature.id.toLowerCase()}/audit.md) |`);
 
     writeFileSync(reportPath, lines.join("\n"), "utf8");

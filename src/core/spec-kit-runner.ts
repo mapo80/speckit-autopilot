@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "fs";
 import { join, dirname } from "path";
 import { spawnSync, spawn } from "child_process";
 import type { Phase } from "./state-store.js";
@@ -130,6 +130,16 @@ function buildSnapshotBlock(snapshotContent: string | null): string {
   return `\nCODEBASE CONTEXT (existing code — integrate with this):\n${snapshotContent}\n`;
 }
 
+function buildProjectStructureBlock(content: string | null): string {
+  if (!content) return "";
+  return `\nPROJECT STRUCTURE (MANDATORY — follow exactly, no new folders/layers):\n${content}\n`;
+}
+
+function buildCodemapBlock(content: string | null): string {
+  if (!content) return "";
+  return `\nEXISTING FILES (extend these, never duplicate):\n${content}\n`;
+}
+
 function buildCriteriaBlock(acceptanceCriteria: string[]): string {
   if (acceptanceCriteria.length === 0) return "";
   return `\n## Acceptance Criteria (must all be satisfied)\n${acceptanceCriteria.map((c) => `- ${c}`).join("\n")}\n`;
@@ -146,7 +156,9 @@ function buildSpecPrompt(
   acceptanceCriteria: string[],
   specTemplate: string | null,
   techStack: string,
-  snapshotContent: string | null = null
+  snapshotContent: string | null = null,
+  projectStructure: string | null = null,
+  codemap: string | null = null
 ): string {
   return `You are an expert software analyst. Output ONLY a Markdown specification document. Do NOT use any tools.
 
@@ -154,7 +166,7 @@ FEATURE: ${featureTitle}
 ${buildCriteriaBlock(acceptanceCriteria)}
 TECH STACK:
 ${techStack}
-${buildSnapshotBlock(snapshotContent)}
+${buildProjectStructureBlock(projectStructure)}${buildCodemapBlock(codemap)}${buildSnapshotBlock(snapshotContent)}
 SPEC TEMPLATE:
 ${specTemplate ?? "Use sections: User Scenarios, Requirements, Success Criteria"}
 ${buildCommandBlock(commandContent)}
@@ -172,7 +184,9 @@ function buildPlanPrompt(
   planTemplate: string | null,
   techStack: string,
   snapshotContent: string | null = null,
-  acceptanceCriteria: string[] = []
+  acceptanceCriteria: string[] = [],
+  projectStructure: string | null = null,
+  codemap: string | null = null
 ): string {
   return `You are an expert software architect. Output ONLY a Markdown plan document. Do NOT use any tools.
 
@@ -180,7 +194,7 @@ FEATURE: ${featureTitle}
 ${buildCriteriaBlock(acceptanceCriteria)}
 TECH STACK:
 ${techStack}
-${buildSnapshotBlock(snapshotContent)}
+${buildProjectStructureBlock(projectStructure)}${buildCodemapBlock(codemap)}${buildSnapshotBlock(snapshotContent)}
 SPECIFICATION:
 ${specContent}
 
@@ -202,7 +216,9 @@ function buildTasksPrompt(
   planContent: string,
   techStack: string,
   snapshotContent: string | null = null,
-  acceptanceCriteria: string[] = []
+  acceptanceCriteria: string[] = [],
+  projectStructure: string | null = null,
+  codemap: string | null = null
 ): string {
   return `You are an expert software engineer. Output ONLY a Markdown task list. Do NOT use any tools.
 
@@ -211,7 +227,7 @@ FEATURE ID: ${featureId}
 ${buildCriteriaBlock(acceptanceCriteria)}
 TECH STACK:
 ${techStack}
-${buildSnapshotBlock(snapshotContent)}
+${buildProjectStructureBlock(projectStructure)}${buildCodemapBlock(codemap)}${buildSnapshotBlock(snapshotContent)}
 SPECIFICATION:
 ${specContent}
 
@@ -235,7 +251,9 @@ function buildImplementPrompt(
   tasksContent: string,
   techStack: string,
   snapshotContent: string | null = null,
-  acceptanceCriteria: string[] = []
+  acceptanceCriteria: string[] = [],
+  projectStructure: string | null = null,
+  codemap: string | null = null
 ): string {
   // NOTE: we do NOT ask claude to use file-writing tools here — we need plain
   // text output only (<<<FILE:>>> blocks) and write the files ourselves.
@@ -251,7 +269,7 @@ FEATURE ID: ${featureId}
 ${buildCriteriaBlock(acceptanceCriteria)}
 TECH STACK:
 ${techStack}
-${buildSnapshotBlock(snapshotContent)}
+${buildProjectStructureBlock(projectStructure)}${buildCodemapBlock(codemap)}${buildSnapshotBlock(snapshotContent)}
 SPECIFICATION:
 ${specContent}
 
@@ -326,6 +344,46 @@ export interface CodeVerificationResult {
   diffSummary: string;
 }
 
+// Root-level dirs to skip when scanning for source files
+const SOURCE_SCAN_EXCLUDE = new Set([
+  ".git", "docs", "node_modules", ".specify", ".speckit", ".claude", "specs",
+]);
+
+function scanSourceFiles(root: string): string[] {
+  const results: string[] = [];
+  function walk(dir: string, rel: string, isRoot: boolean): void {
+    let entries: string[];
+    try { entries = readdirSync(dir); } catch { return; }
+    for (const entry of entries) {
+      if (isRoot && SOURCE_SCAN_EXCLUDE.has(entry)) continue;
+      const full = join(dir, entry);
+      const relPath = rel ? `${rel}/${entry}` : entry;
+      try {
+        const st = statSync(full);
+        if (st.isDirectory()) {
+          walk(full, relPath, false);
+        } else if (!entry.endsWith(".DS_Store") && !entry.endsWith(".md")) {
+          results.push(relPath);
+        }
+      } catch { /* skip */ }
+    }
+  }
+  walk(root, "", true);
+  return results;
+}
+
+function detectNewSourceFiles(root: string): string[] {
+  const snapshotPath = join(root, "docs", "codebase-snapshot.md");
+  const snapshotFiles = new Set<string>();
+  if (existsSync(snapshotPath)) {
+    for (const line of readFileSync(snapshotPath, "utf8").split("\n")) {
+      if (line.startsWith("- ")) snapshotFiles.add(line.slice(2).trim());
+    }
+  }
+  const current = scanSourceFiles(root);
+  return current.filter((f) => !snapshotFiles.has(f));
+}
+
 export function verifyImplementationProducedCode(
   root: string,
   featureId: string
@@ -392,8 +450,19 @@ export function verifyImplementationProducedCode(
     };
   }
 
+  // Non-git fallback: compare against codebase-snapshot.md to find truly new files
+  const newSourceFiles = detectNewSourceFiles(root);
+  if (newSourceFiles.length > 0) {
+    return {
+      hasNewFiles: true,
+      changedFiles: newSourceFiles,
+      diffSummary: `${newSourceFiles.length} new source file(s) detected`,
+    };
+  }
+
+  // Only spec artifacts — no application code produced
   return {
-    hasNewFiles: specArtifacts.length > 0,
+    hasNewFiles: false,
     changedFiles: specArtifacts,
     diffSummary:
       specArtifacts.length > 0
@@ -426,6 +495,8 @@ export class SpecKitRunner {
   private readonly claudePath: string = "claude";
   private readonly techStack: string;
   private readonly snapshotContent: string | null;
+  private readonly projectStructureContent: string | null;
+  private codemapContent: string | null;
 
   /**
    * Overridable Claude call — defaults to the CLI implementation.
@@ -450,11 +521,19 @@ export class SpecKitRunner {
     // Load brownfield snapshot if present — passed as context to all phase prompts
     const snapshotPath = join(root, "docs", "brownfield-snapshot.md");
     this.snapshotContent = existsSync(snapshotPath) ? readFileSync(snapshotPath, "utf8") : null;
+    // Load canonical project structure and codebase file tree if present
+    this.projectStructureContent = readArtifact(join(root, "docs", "project-structure.md"));
+    this.codemapContent = readArtifact(join(root, "docs", "codebase-snapshot.md"));
   }
 
   /** Always "cli" — kept for compatibility with existing callers. */
   getMode(): "cli" {
     return "cli";
+  }
+
+  /** Reload codebase-snapshot.md from disk (call after updateCodebaseSnapshot). */
+  reloadCodemap(): void {
+    this.codemapContent = readArtifact(join(this.root, "docs", "codebase-snapshot.md"));
   }
 
   private specsDir(featureId: string): string {
@@ -519,7 +598,7 @@ export class SpecKitRunner {
       "Create a feature specification with User Scenarios, Requirements, and Success Criteria.";
     const specTemplate = readTemplateFile(this.root, "spec-template.md");
 
-    const prompt = buildSpecPrompt(commandContent, featureTitle, acceptanceCriteria, specTemplate, this.techStack, this.snapshotContent);
+    const prompt = buildSpecPrompt(commandContent, featureTitle, acceptanceCriteria, specTemplate, this.techStack, this.snapshotContent, this.projectStructureContent, this.codemapContent);
     const response = await this.callClaude(prompt);
 
     const specsDir = this.specsDir(featureId);
@@ -603,7 +682,7 @@ export class SpecKitRunner {
       "Create an implementation plan with Technical Context and Project Structure.";
     const planTemplate = readTemplateFile(this.root, "plan-template.md");
 
-    const prompt = buildPlanPrompt(commandContent, featureTitle, specContent, planTemplate, this.techStack, this.snapshotContent, acceptanceCriteria);
+    const prompt = buildPlanPrompt(commandContent, featureTitle, specContent, planTemplate, this.techStack, this.snapshotContent, acceptanceCriteria, this.projectStructureContent, this.codemapContent);
     const response = await this.callClaude(prompt);
 
     const planPath = join(specsDir, "plan.md");
@@ -621,7 +700,7 @@ export class SpecKitRunner {
       readCommandFile(this.root, "speckit.tasks") ??
       "Generate actionable tasks with file paths for implementation.";
 
-    const prompt = buildTasksPrompt(commandContent, featureTitle, featureId, specContent, planContent, this.techStack, this.snapshotContent, acceptanceCriteria);
+    const prompt = buildTasksPrompt(commandContent, featureTitle, featureId, specContent, planContent, this.techStack, this.snapshotContent, acceptanceCriteria, this.projectStructureContent, this.codemapContent);
     const response = await this.callClaude(prompt);
 
     const tasksPath = join(specsDir, "tasks.md");
@@ -654,7 +733,9 @@ export class SpecKitRunner {
       tasksContent,
       this.techStack,
       this.snapshotContent,
-      acceptanceCriteria
+      acceptanceCriteria,
+      this.projectStructureContent,
+      this.codemapContent
     );
     const response = await this.callClaude(prompt);
 

@@ -123,10 +123,10 @@ describe("printStatus – state + backlog with features", () => {
     const store = new StateStore(tmp);
     store.createInitial("greenfield");
     writeBacklogYaml(tmp, [
-      { id: "F-001", title: "First Feature", status: "open", acceptanceCriteria: ["works"] },
-      { id: "F-002", title: "Second Feature", status: "in_progress", acceptanceCriteria: ["works"] },
-      { id: "F-003", title: "Third Feature", status: "done", acceptanceCriteria: ["works"] },
-      { id: "F-004", title: "Fourth Feature", status: "blocked", acceptanceCriteria: ["works"] },
+      { id: "first-feature", title: "First Feature", status: "open", acceptanceCriteria: ["works"] },
+      { id: "second-feature", title: "Second Feature", status: "in_progress", acceptanceCriteria: ["works"] },
+      { id: "third-feature", title: "Third Feature", status: "done", acceptanceCriteria: ["works"] },
+      { id: "fourth-feature", title: "Fourth Feature", status: "blocked", acceptanceCriteria: ["works"] },
     ]);
     logs = [];
     jest.spyOn(console, "log").mockImplementation((...args) => {
@@ -166,7 +166,7 @@ describe("printStatus – state + backlog with features", () => {
 
   it("shows next feature (first open feature)", () => {
     printStatus(tmp);
-    expect(logs.some((l) => l.includes("F-001") && l.includes("First Feature"))).toBe(true);
+    expect(logs.some((l) => l.includes("first-feature") && l.includes("First Feature"))).toBe(true);
   });
 });
 

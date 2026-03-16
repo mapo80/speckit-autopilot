@@ -11,7 +11,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import yaml from "js-yaml";
 import { StateStore } from "../../src/core/state-store.js";
-import { makeEmptyBacklog, Feature, Backlog, featureNextId } from "../../src/core/backlog-schema.js";
+import { makeEmptyBacklog, Feature, Backlog, featureSlug } from "../../src/core/backlog-schema.js";
 import { ship as shipProduct, ship as shipFeature, readBacklog, writeBacklog, PhaseRunner, makeDefaultPhaseRunner } from "../../src/cli/ship.js";
 import { resumeLoop } from "../../src/cli/resume-loop.js";
 import { parseProductMd, buildBacklogFromProduct } from "../../src/cli/bootstrap-product.js";
@@ -86,8 +86,8 @@ describe("shipProduct – blocked_by_dependencies", () => {
 
   it("returns blocked when all open features have unmet dependencies", async () => {
     setupProject(tmp, [
-      makeFeature("F-001", "high", ["F-002"]),  // depends on F-002 which is also open
-      makeFeature("F-002", "medium", ["F-001"]), // circular: depends on F-001
+      makeFeature("feature-one", "high", ["feature-two"]),  // depends on F-002 which is also open
+      makeFeature("feature-two", "medium", ["feature-one"]), // circular: depends on F-001
     ]);
     const result = await shipProduct({ root: tmp, phaseRunner: makeSuccessRunner(), dryRun: true });
     expect(result.finalStatus).toBe("blocked");
@@ -105,7 +105,7 @@ describe("shipProduct – QA gate failure (non-dry-run)", () => {
   afterEach(() => rmSync(tmp, { recursive: true, force: true }));
 
   it("records QA failure and reopens feature when acceptance items are pending", async () => {
-    setupProject(tmp, [makeFeature("F-001")]);
+    setupProject(tmp, [makeFeature("feature-one")]);
     const store = new StateStore(tmp);
     // Disable lint/test but leave acceptance items pending → gate fails without spawnSync
     store.update({
@@ -135,7 +135,7 @@ describe("shipFeature – phase failure (non-dry-run)", () => {
 
   it("updates state and reopens feature on phase failure", async () => {
     mkdirSync(join(tmp, "docs"), { recursive: true });
-    const backlog: Backlog = { ...makeEmptyBacklog(), features: [makeFeature("F-001")] };
+    const backlog: Backlog = { ...makeEmptyBacklog(), features: [makeFeature("feature-one")] };
     writeFileSync(join(tmp, "docs", "product-backlog.yaml"), yaml.dump(backlog), "utf8");
     const store = new StateStore(tmp);
     store.createInitial("greenfield");
@@ -143,7 +143,7 @@ describe("shipFeature – phase failure (non-dry-run)", () => {
 
     const result = await shipFeature({
       root: tmp,
-      featureTarget: "F-001",
+      featureTarget: "feature-one",
       phaseRunner: makeFailRunner(),
       dryRun: false,
     });
@@ -167,7 +167,7 @@ describe("shipFeature – QA gate failure (non-dry-run)", () => {
 
   it("reopens feature when QA gate fails", async () => {
     mkdirSync(join(tmp, "docs"), { recursive: true });
-    const backlog: Backlog = { ...makeEmptyBacklog(), features: [makeFeature("F-001")] };
+    const backlog: Backlog = { ...makeEmptyBacklog(), features: [makeFeature("feature-one")] };
     writeFileSync(join(tmp, "docs", "product-backlog.yaml"), yaml.dump(backlog), "utf8");
     const store = new StateStore(tmp);
     store.createInitial("greenfield");
@@ -183,7 +183,7 @@ describe("shipFeature – QA gate failure (non-dry-run)", () => {
 
     const result = await shipFeature({
       root: tmp,
-      featureTarget: "F-001",
+      featureTarget: "feature-one",
       phaseRunner: makeSuccessRunner(),
       dryRun: false,
     });
@@ -313,7 +313,7 @@ describe("resumeLoop – backlog file missing", () => {
   it("resumes when state exists but backlog file is missing", async () => {
     const store = new StateStore(tmp);
     store.createInitial();
-    store.update({ activeFeature: "F-001", currentPhase: "spec", status: "running" });
+    store.update({ activeFeature: "feature-one", currentPhase: "spec", status: "running" });
     // No backlog file written
 
     const result = await resumeLoop({ root: tmp, continueAutomatically: false });
@@ -334,15 +334,15 @@ describe("resumeLoop – multiple in_progress features in backlog", () => {
   it("uses state.activeFeature when backlog has multiple in_progress", async () => {
     const store = new StateStore(tmp);
     store.createInitial();
-    store.update({ activeFeature: "F-002", currentPhase: "plan", status: "running" });
+    store.update({ activeFeature: "feature-two", currentPhase: "plan", status: "running" });
 
     mkdirSync(join(tmp, "docs"), { recursive: true });
     // Simulate backlog inconsistency: both F-001 and F-002 are in_progress
     const backlog: Backlog = {
       ...makeEmptyBacklog(),
       features: [
-        { ...makeFeature("F-001"), status: "in_progress" },
-        { ...makeFeature("F-002"), status: "in_progress" },
+        { ...makeFeature("feature-one"), status: "in_progress" },
+        { ...makeFeature("feature-two"), status: "in_progress" },
       ],
     };
     writeFileSync(join(tmp, "docs", "product-backlog.yaml"), yaml.dump(backlog), "utf8");
@@ -350,7 +350,7 @@ describe("resumeLoop – multiple in_progress features in backlog", () => {
     const result = await resumeLoop({ root: tmp, continueAutomatically: false });
     expect(result.resumed).toBe(true);
     // State wins: activeFeature should be F-002
-    expect(result.banner).toContain("F-002");
+    expect(result.banner).toContain("feature-two");
   });
 });
 
@@ -366,19 +366,19 @@ describe("resumeLoop – state has activeFeature but backlog has no in_progress"
   it("returns state.activeFeature when backlog has no in_progress features", async () => {
     const store = new StateStore(tmp);
     store.createInitial();
-    store.update({ activeFeature: "F-001", currentPhase: "plan", status: "running" });
+    store.update({ activeFeature: "feature-one", currentPhase: "plan", status: "running" });
 
     mkdirSync(join(tmp, "docs"), { recursive: true });
     // All features are open (none in_progress) but state says F-001 is active
     const backlog: Backlog = {
       ...makeEmptyBacklog(),
-      features: [makeFeature("F-001"), makeFeature("F-002")],
+      features: [makeFeature("feature-one"), makeFeature("feature-two")],
     };
     writeFileSync(join(tmp, "docs", "product-backlog.yaml"), yaml.dump(backlog), "utf8");
 
     const result = await resumeLoop({ root: tmp, continueAutomatically: false });
     expect(result.resumed).toBe(true);
-    expect(result.banner).toContain("F-001");
+    expect(result.banner).toContain("feature-one");
   });
 });
 
@@ -395,14 +395,14 @@ describe("resumeLoop – backlog single in_progress overrides state", () => {
     const store = new StateStore(tmp);
     store.createInitial();
     // State says F-001 is active, but backlog says F-002 is in_progress
-    store.update({ activeFeature: "F-001", currentPhase: "plan", status: "running" });
+    store.update({ activeFeature: "feature-one", currentPhase: "plan", status: "running" });
 
     mkdirSync(join(tmp, "docs"), { recursive: true });
     const backlog: Backlog = {
       ...makeEmptyBacklog(),
       features: [
-        makeFeature("F-001"),
-        { ...makeFeature("F-002"), status: "in_progress" },
+        makeFeature("feature-one"),
+        { ...makeFeature("feature-two"), status: "in_progress" },
       ],
     };
     writeFileSync(join(tmp, "docs", "product-backlog.yaml"), yaml.dump(backlog), "utf8");
@@ -411,7 +411,7 @@ describe("resumeLoop – backlog single in_progress overrides state", () => {
     expect(result.resumed).toBe(true);
     // After reconciliation, state should have F-002 as active
     const updatedState = store.read();
-    expect(updatedState.activeFeature).toBe("F-002");
+    expect(updatedState.activeFeature).toBe("feature-two");
   });
 });
 
@@ -425,7 +425,7 @@ describe("shipProduct – phase failure without error message", () => {
   afterEach(() => rmSync(tmp, { recursive: true, force: true }));
 
   it("uses fallback error message when runner returns no error string", async () => {
-    setupProject(tmp, [makeFeature("F-001")], false);
+    setupProject(tmp, [makeFeature("feature-one")], false);
     // Runner returns failure without an error message
     const noErrorRunner: PhaseRunner = async () => ({ success: false, phase: "spec" });
     const result = await shipProduct({ root: tmp, phaseRunner: noErrorRunner, dryRun: true });
@@ -497,7 +497,7 @@ describe("resumeLoop – corrupt backlog YAML triggers catch branch", () => {
   it("falls back to state.activeFeature when backlog YAML is corrupt", async () => {
     const store = new StateStore(tmp);
     store.createInitial();
-    store.update({ activeFeature: "F-001", currentPhase: "spec", status: "running" });
+    store.update({ activeFeature: "feature-one", currentPhase: "spec", status: "running" });
 
     mkdirSync(join(tmp, "docs"), { recursive: true });
     // Write corrupt YAML – existsSync returns true but readBacklog throws
@@ -505,23 +505,28 @@ describe("resumeLoop – corrupt backlog YAML triggers catch branch", () => {
 
     const result = await resumeLoop({ root: tmp, continueAutomatically: false });
     expect(result.resumed).toBe(true);
-    expect(result.banner).toContain("F-001");
+    expect(result.banner).toContain("feature-one");
   });
 });
 
 // ---------------------------------------------------------------------------
-// backlog-schema: featureNextId with non-standard IDs (line 77 `: 0` branch)
+// backlog-schema: featureSlug uniqueness and collision handling
 // ---------------------------------------------------------------------------
 
-describe("featureNextId – non-standard ID format returns 0 for that feature", () => {
-  it("treats non-F-NNN IDs as 0 and returns F-001", () => {
-    const backlog = makeEmptyBacklog();
-    backlog.features = [{
-      id: "CUSTOM-001", title: "Custom", epic: "E", status: "open",
-      priority: "medium", dependsOn: [], acceptanceCriteria: [],
-      estimatedComplexity: "medium", specKitBranch: "", notes: "",
-    }];
-    expect(featureNextId(backlog)).toBe("F-001");
+describe("featureSlug – slug uniqueness", () => {
+  it("generates unique slugs when titles are similar", () => {
+    const existing: string[] = [];
+    const slug1 = featureSlug("Feature 1 - Auth: Login", existing);
+    existing.push(slug1);
+    const slug2 = featureSlug("Feature 2 - Auth: Login", existing);
+    expect(slug1).not.toBe(slug2);
+    expect(slug2).toMatch(/^[a-z][a-z0-9-]{2,63}$/);
+  });
+
+  it("handles empty string input gracefully", () => {
+    const slug = featureSlug("abc", []);
+    expect(slug.length).toBeGreaterThanOrEqual(3);
+    expect(slug).toMatch(/^[a-z][a-z0-9-]{2,63}$/);
   });
 });
 
@@ -533,7 +538,7 @@ describe("makeDefaultPhaseRunner – branch coverage", () => {
   it("uses startIdx=0 (default) when startFromPhase is not provided", async () => {
     const runner = makeDefaultPhaseRunner();
     // No startFromPhase → hits the `: 0` branch on line 71
-    const result = await runner({ root: "/tmp", featureId: "F-001", featureTitle: "Test", dryRun: true });
+    const result = await runner({ root: "/tmp", featureId: "feature-one", featureTitle: "Test", dryRun: true });
     expect(result.success).toBe(true);
     expect(result.phase).toBe("implement");
   });
@@ -541,7 +546,7 @@ describe("makeDefaultPhaseRunner – branch coverage", () => {
   it("falls back to full phases list when startFromPhase is not in the phases array", async () => {
     const runner = makeDefaultPhaseRunner();
     // "qa" is not in the internal phases array → startIdx = -1 → activePhases = phases (line 72)
-    const result = await runner({ root: "/tmp", featureId: "F-001", featureTitle: "Test", startFromPhase: "qa", dryRun: true });
+    const result = await runner({ root: "/tmp", featureId: "feature-one", featureTitle: "Test", startFromPhase: "qa", dryRun: true });
     expect(result.success).toBe(true);
     // With full phases list, last phase is "implement"
     expect(result.phase).toBe("implement");
@@ -550,7 +555,7 @@ describe("makeDefaultPhaseRunner – branch coverage", () => {
   it("slices from the given start phase when valid", async () => {
     const runner = makeDefaultPhaseRunner();
     // "plan" is in the array → startIdx > 0 → sliced subset
-    const result = await runner({ root: "/tmp", featureId: "F-001", featureTitle: "Test", startFromPhase: "plan", dryRun: true });
+    const result = await runner({ root: "/tmp", featureId: "feature-one", featureTitle: "Test", startFromPhase: "plan", dryRun: true });
     expect(result.success).toBe(true);
     expect(result.phase).toBe("implement");
   });
@@ -584,18 +589,18 @@ describe("shipFeature – state file missing when backlog exists", () => {
 
   it("creates initial state when backlog exists but state file is absent", async () => {
     mkdirSync(join(tmp, "docs"), { recursive: true });
-    const backlog: Backlog = { ...makeEmptyBacklog(), features: [makeFeature("F-001")] };
+    const backlog: Backlog = { ...makeEmptyBacklog(), features: [makeFeature("feature-one")] };
     writeFileSync(join(tmp, "docs", "product-backlog.yaml"), yaml.dump(backlog), "utf8");
     // No state file created → shipFeature must call store.createInitial (line 80)
 
     const result = await shipFeature({
       root: tmp,
-      featureTarget: "F-001",
+      featureTarget: "feature-one",
       phaseRunner: makeSuccessRunner(),
       dryRun: true,
     });
     // Should succeed (or fail gracefully); importantly, no crash on missing state
-    expect(result.featureId).toBe("F-001");
+    expect(result.featureId).toBe("feature-one");
   });
 });
 

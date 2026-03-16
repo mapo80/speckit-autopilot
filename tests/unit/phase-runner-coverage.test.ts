@@ -70,10 +70,10 @@ describe("makeDefaultPhaseRunner non-dryRun branch coverage", () => {
 
   it("returns success and phase when runPhases succeeds and code is produced", async () => {
     setupSpecKitDirs(tmp);
-    setupProject(tmp, [makeFeature("F-001")]);
+    setupProject(tmp, [makeFeature("feature-one")]);
 
     // Write a real source file so verifyImplementationProducedCode returns hasNewFiles:true
-    const featureDir = join(tmp, "src", "features", "f-001");
+    const featureDir = join(tmp, "src", "features", "feature-one");
     mkdirSync(featureDir, { recursive: true });
     writeFileSync(join(featureDir, "index.ts"), "export const x = 1;", "utf8");
 
@@ -86,7 +86,7 @@ describe("makeDefaultPhaseRunner non-dryRun branch coverage", () => {
     const runner = makeDefaultPhaseRunner("fake-api-key-for-testing");
     const result = await runner({
       root: tmp,
-      featureId: "F-001",
+      featureId: "feature-one",
       featureTitle: "Feature F-001",
       startFromPhase: "spec",
       dryRun: false,
@@ -99,7 +99,7 @@ describe("makeDefaultPhaseRunner non-dryRun branch coverage", () => {
 
   it("returns failure when runPhases fails", async () => {
     setupSpecKitDirs(tmp);
-    setupProject(tmp, [makeFeature("F-001")]);
+    setupProject(tmp, [makeFeature("feature-one")]);
 
     runPhasesSpy = jest.spyOn(SpecKitRunner.prototype, "runPhases").mockResolvedValue({
       success: false,
@@ -110,7 +110,7 @@ describe("makeDefaultPhaseRunner non-dryRun branch coverage", () => {
     const runner = makeDefaultPhaseRunner("fake-api-key-for-testing");
     const result = await runner({
       root: tmp,
-      featureId: "F-001",
+      featureId: "feature-one",
       featureTitle: "Feature F-001",
       startFromPhase: "spec",
       dryRun: false,
@@ -123,7 +123,7 @@ describe("makeDefaultPhaseRunner non-dryRun branch coverage", () => {
 
   it("returns failure when runPhases succeeds but no code was produced", async () => {
     setupSpecKitDirs(tmp);
-    setupProject(tmp, [makeFeature("F-001")]);
+    setupProject(tmp, [makeFeature("feature-one")]);
     // No files written to src/ — verifyImplementationProducedCode returns hasNewFiles:false
 
     runPhasesSpy = jest.spyOn(SpecKitRunner.prototype, "runPhases").mockResolvedValue({
@@ -134,7 +134,7 @@ describe("makeDefaultPhaseRunner non-dryRun branch coverage", () => {
     const runner = makeDefaultPhaseRunner("fake-api-key-for-testing");
     const result = await runner({
       root: tmp,
-      featureId: "F-001",
+      featureId: "feature-one",
       featureTitle: "Feature F-001",
       startFromPhase: "spec",
       dryRun: false,
@@ -147,7 +147,7 @@ describe("makeDefaultPhaseRunner non-dryRun branch coverage", () => {
 
   it("passes acceptance criteria from backlog to runPhases", async () => {
     setupSpecKitDirs(tmp);
-    const feat = makeFeature("F-002");
+    const feat = makeFeature("feature-two");
     feat.acceptanceCriteria = ["Criterion A", "Criterion B"];
     setupProject(tmp, [feat]);
 
@@ -163,7 +163,7 @@ describe("makeDefaultPhaseRunner non-dryRun branch coverage", () => {
     const runner = makeDefaultPhaseRunner("fake-api-key-for-testing");
     await runner({
       root: tmp,
-      featureId: "F-002",
+      featureId: "feature-two",
       featureTitle: "Feature F-002",
       startFromPhase: "spec",
       dryRun: false,
@@ -171,7 +171,7 @@ describe("makeDefaultPhaseRunner non-dryRun branch coverage", () => {
 
     // runPhases should have been called with the acceptance criteria
     expect(runPhasesSpy).toHaveBeenCalledWith(
-      "F-002",
+      "feature-two",
       "Feature F-002",
       ["Criterion A", "Criterion B"],
       "spec"
@@ -180,9 +180,9 @@ describe("makeDefaultPhaseRunner non-dryRun branch coverage", () => {
 
   it("falls back to empty criteria when backlog feature not found", async () => {
     setupSpecKitDirs(tmp);
-    setupProject(tmp, [makeFeature("F-001")]);
+    setupProject(tmp, [makeFeature("feature-one")]);
 
-    const featureDir = join(tmp, "src", "features", "f-999");
+    const featureDir = join(tmp, "src", "features", "feature-dep");
     mkdirSync(featureDir, { recursive: true });
     writeFileSync(join(featureDir, "index.ts"), "export const z = 3;", "utf8");
 
@@ -194,14 +194,14 @@ describe("makeDefaultPhaseRunner non-dryRun branch coverage", () => {
     const runner = makeDefaultPhaseRunner("fake-api-key-for-testing");
     const result = await runner({
       root: tmp,
-      featureId: "F-999",  // not in backlog
+      featureId: "feature-dep",  // not in backlog
       featureTitle: "Unknown Feature",
       startFromPhase: "spec",
       dryRun: false,
     });
 
     // runPhases called with empty criteria
-    expect(runPhasesSpy).toHaveBeenCalledWith("F-999", "Unknown Feature", [], "spec");
+    expect(runPhasesSpy).toHaveBeenCalledWith("feature-dep", "Unknown Feature", [], "spec");
     expect(result.success).toBe(true);
   });
 
@@ -209,7 +209,7 @@ describe("makeDefaultPhaseRunner non-dryRun branch coverage", () => {
     // No .specify or .claude/commands — specify init will be called
     // But point root to a path where it would fail or succeed
     // We can force failure by using a path where specify can't write
-    setupProject(tmp, [makeFeature("F-001")]);
+    setupProject(tmp, [makeFeature("feature-one")]);
 
     // Don't setup speckit dirs — let ensureSpecKitInitialized try to run specify init
     // Since specify IS installed, it will actually succeed. Test the failure branch
@@ -220,7 +220,7 @@ describe("makeDefaultPhaseRunner non-dryRun branch coverage", () => {
     const runner = makeDefaultPhaseRunner("fake-api-key-for-testing");
     const result = await runner({
       root: badRoot,
-      featureId: "F-001",
+      featureId: "feature-one",
       featureTitle: "Feature",
       startFromPhase: "spec",
       dryRun: false,
@@ -234,7 +234,7 @@ describe("makeDefaultPhaseRunner non-dryRun branch coverage", () => {
     const runner = makeDefaultPhaseRunner();
     const result = await runner({
       root: tmp,
-      featureId: "F-001",
+      featureId: "feature-one",
       featureTitle: "Test",
       dryRun: true,
     });
@@ -250,7 +250,7 @@ describe("makeDefaultPhaseRunner non-dryRun branch coverage", () => {
     // 'done' is not in the phases list for dryRun
     const result = await runner({
       root: tmp,
-      featureId: "F-001",
+      featureId: "feature-one",
       featureTitle: "Test",
       startFromPhase: "done",
       dryRun: true,
@@ -282,7 +282,7 @@ describe("verifyImplementationProducedCode additional branches", () => {
     expect(Array.isArray(result.changedFiles)).toBe(true);
   });
 
-  it("spec artifacts only → hasNewFiles depends on count, diffSummary is set", () => {
+  it("spec artifacts only → hasNewFiles is false, diffSummary mentions spec artifacts", () => {
     const specsDir = join(tmp, "docs", "specs", "f-speconly");
     mkdirSync(specsDir, { recursive: true });
     writeFileSync(join(specsDir, "spec.md"), "# Spec", "utf8");
@@ -290,9 +290,9 @@ describe("verifyImplementationProducedCode additional branches", () => {
     writeFileSync(join(specsDir, "tasks.md"), "# Tasks", "utf8");
 
     const result = verifyImplementationProducedCode(tmp, "F-speconly");
-    // Spec artifacts exist but no src/ files
-    expect(typeof result.hasNewFiles).toBe("boolean");
-    expect(result.diffSummary.length).toBeGreaterThan(0);
+    // Spec artifacts exist but no src/ files — hasNewFiles must be false
+    expect(result.hasNewFiles).toBe(false);
+    expect(result.diffSummary).toContain("spec artifact");
   });
 });
 

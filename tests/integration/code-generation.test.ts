@@ -69,29 +69,29 @@ describe("verifyImplementationProducedCode (integration)", () => {
   afterEach(() => rmSync(tmp, { recursive: true, force: true }));
 
   it("detects files written into src/features/{featureId}/", () => {
-    const featureDir = join(tmp, "src", "features", "f-001");
+    const featureDir = join(tmp, "src", "features", "feature-one");
     mkdirSync(featureDir, { recursive: true });
     writeFileSync(join(featureDir, "index.ts"), "export const hello = 'world';", "utf8");
 
-    const result = verifyImplementationProducedCode(tmp, "F-001");
+    const result = verifyImplementationProducedCode(tmp, "feature-one");
     expect(result.hasNewFiles).toBe(true);
     expect(result.changedFiles.some((f) => f.includes("index.ts"))).toBe(true);
   });
 
   it("returns no-files result for empty project", () => {
-    const result = verifyImplementationProducedCode(tmp, "F-999");
+    const result = verifyImplementationProducedCode(tmp, "feature-dep");
     expect(typeof result.hasNewFiles).toBe("boolean");
     expect(result.diffSummary).toBeDefined();
   });
 
   it("changedFiles excludes test files", () => {
     // git-based detection ignores .test.ts — this test verifies the src/ file path filter
-    const featureDir = join(tmp, "src", "features", "f-002");
+    const featureDir = join(tmp, "src", "features", "feature-two");
     mkdirSync(featureDir, { recursive: true });
     writeFileSync(join(featureDir, "index.ts"), "export const x = 1;", "utf8");
     writeFileSync(join(featureDir, "index.test.ts"), "// tests", "utf8");
 
-    const result = verifyImplementationProducedCode(tmp, "F-002");
+    const result = verifyImplementationProducedCode(tmp, "feature-two");
     expect(result.hasNewFiles).toBe(true);
     // The src/features directory check finds *.ts files but test check is git-based
     // What matters is hasNewFiles is true when real code exists
@@ -108,7 +108,7 @@ describe("shipProduct code-production gate", () => {
   afterEach(() => rmSync(tmp, { recursive: true, force: true }));
 
   it("marks feature failed when phase runner produces no code", async () => {
-    setupProject(tmp, [makeFeature("F-001")]);
+    setupProject(tmp, [makeFeature("feature-one")]);
 
     // Runner that succeeds but writes NO files
     const noCodeRunner: PhaseRunner = async () => ({ success: true, phase: "implement" });
@@ -126,7 +126,7 @@ describe("shipProduct code-production gate", () => {
   });
 
   it("marks feature completed when phase runner produces real files", async () => {
-    setupProject(tmp, [makeFeature("F-001")]);
+    setupProject(tmp, [makeFeature("feature-one")]);
 
     // Runner that writes an actual file and returns success
     const realCodeRunner: PhaseRunner = async (opts) => {
@@ -151,7 +151,7 @@ describe("shipProduct code-production gate", () => {
   });
 
   it("feature is done in backlog after successful ship", async () => {
-    setupProject(tmp, [makeFeature("F-001")]);
+    setupProject(tmp, [makeFeature("feature-one")]);
 
     const realCodeRunner: PhaseRunner = async (opts) => {
       const featureDir = join(opts.root, "src", "features", opts.featureId.toLowerCase());
@@ -238,7 +238,7 @@ describe("makeDefaultPhaseRunner with mocked SDK", () => {
 
     const result = await runner({
       root: tmp,
-      featureId: "F-001",
+      featureId: "feature-one",
       featureTitle: "Test Feature",
       startFromPhase: "spec",
       dryRun: true,
@@ -261,7 +261,7 @@ describe("makeDefaultPhaseRunner with mocked SDK", () => {
 
       const result = await runner({
         root: tmp,
-        featureId: "F-001",
+        featureId: "feature-one",
         featureTitle: "Test Feature",
         startFromPhase: "spec",
         dryRun: false,

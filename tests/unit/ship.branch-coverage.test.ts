@@ -79,7 +79,7 @@ describe("makeDefaultPhaseRunner – dryRun=true, constitution.md exists (line 9
     const runner = makeDefaultPhaseRunner();
     const result = await runner({
       root: tmp,
-      featureId: "F-001",
+      featureId: "feature-one",
       featureTitle: "Test Feature",
       dryRun: true,
     });
@@ -95,7 +95,7 @@ describe("makeDefaultPhaseRunner – dryRun=true, constitution.md exists (line 9
     const runner = makeDefaultPhaseRunner();
     const result = await runner({
       root: tmp,
-      featureId: "F-001",
+      featureId: "feature-one",
       featureTitle: "Test Feature",
       dryRun: true,
     });
@@ -119,7 +119,7 @@ describe("makeDefaultPhaseRunner – startFromPhase 'qa' not in dryRun phases (l
     const runner = makeDefaultPhaseRunner();
     const result = await runner({
       root: tmp,
-      featureId: "F-001",
+      featureId: "feature-one",
       featureTitle: "Test Feature",
       startFromPhase: "qa",
       dryRun: true,
@@ -134,7 +134,7 @@ describe("makeDefaultPhaseRunner – startFromPhase 'qa' not in dryRun phases (l
     const runner = makeDefaultPhaseRunner();
     const result = await runner({
       root: tmp,
-      featureId: "F-001",
+      featureId: "feature-one",
       featureTitle: "Test Feature",
       startFromPhase: "spec",
       dryRun: true,
@@ -166,7 +166,7 @@ describe("makeDefaultPhaseRunner – non-dryRun failure modes (lines 115-131, 14
     // Test the returned result type is consistent when runner errors
     const result = await runner({
       root: tmp,
-      featureId: "F-001",
+      featureId: "feature-one",
       featureTitle: "Test Feature",
       dryRun: false,
     });
@@ -190,12 +190,12 @@ describe("ship – phase failure increments consecutiveFailures (line 245)", () 
   afterEach(() => rmSync(tmp, { recursive: true, force: true }));
 
   it("marks feature open and increments consecutiveFailures when phase fails", async () => {
-    setupBacklog(tmp, [makeFeature("F-001")]);
+    setupBacklog(tmp, [makeFeature("feature-one")]);
     const store = setupState(tmp);
 
     const result = await ship({
       root: tmp,
-      featureTarget: "F-001",
+      featureTarget: "feature-one",
       dryRun: false,
       phaseRunner: failRunner,
     });
@@ -209,12 +209,12 @@ describe("ship – phase failure increments consecutiveFailures (line 245)", () 
   });
 
   it("feature reverts to open status when phase runner fails", async () => {
-    setupBacklog(tmp, [makeFeature("F-001")]);
+    setupBacklog(tmp, [makeFeature("feature-one")]);
     setupState(tmp);
 
     await ship({
       root: tmp,
-      featureTarget: "F-001",
+      featureTarget: "feature-one",
       dryRun: false,
       phaseRunner: failRunner,
     });
@@ -223,7 +223,7 @@ describe("ship – phase failure increments consecutiveFailures (line 245)", () 
     const raw = yaml.load(readFileSync(backlogPath, "utf8")) as {
       features: Feature[];
     };
-    const feature = raw.features.find((f: Feature) => f.id === "F-001");
+    const feature = raw.features.find((f: Feature) => f.id === "feature-one");
     expect(feature?.status).toBe("open");
   });
 });
@@ -241,7 +241,7 @@ describe("ship – QA gate failure after successful phases (line 277)", () => {
   afterEach(() => rmSync(tmp, { recursive: true, force: true }));
 
   it("records gate failure and reverts feature to open", async () => {
-    setupBacklog(tmp, [makeFeature("F-001")]);
+    setupBacklog(tmp, [makeFeature("feature-one")]);
     const store = setupState(tmp);
     // Configure state so gatingEnabled = true but minCoverage is set high
     // so real acceptance gate fails (when run in a tmp dir with no tests)
@@ -258,7 +258,7 @@ describe("ship – QA gate failure after successful phases (line 277)", () => {
     // Phase runner succeeds
     const result = await ship({
       root: tmp,
-      featureTarget: "F-001",
+      featureTarget: "feature-one",
       dryRun: false,
       phaseRunner: successRunner,
     });
@@ -287,7 +287,7 @@ describe("ship – dryRun=false success path writes implementation report (lines
   afterEach(() => rmSync(tmp, { recursive: true, force: true }));
 
   it("writes implementation-report.json when dryRun=false and everything succeeds", async () => {
-    setupBacklog(tmp, [makeFeature("F-001")]);
+    setupBacklog(tmp, [makeFeature("feature-one")]);
     setupState(tmp);
 
     // Override acceptance gate to always pass by disabling all checks
@@ -304,7 +304,7 @@ describe("ship – dryRun=false success path writes implementation report (lines
 
     const result = await ship({
       root: tmp,
-      featureTarget: "F-001",
+      featureTarget: "feature-one",
       dryRun: false,
       phaseRunner: successRunner,
     });
@@ -312,7 +312,7 @@ describe("ship – dryRun=false success path writes implementation report (lines
     // Whether it succeeds or fails depends on gating behavior in test env.
     // Check that if success, the report is written.
     if (result.success) {
-      const reportPath = join(tmp, "docs", "specs", "f-001", "implementation-report.json");
+      const reportPath = join(tmp, "docs", "specs", "feature-one", "implementation-report.json");
       expect(existsSync(reportPath)).toBe(true);
     }
     // Ensure result has proper shape
@@ -332,25 +332,25 @@ describe("ship – feature not found returns clear error (line ~423)", () => {
   afterEach(() => rmSync(tmp, { recursive: true, force: true }));
 
   it("returns success:false when featureTarget ID not in backlog", async () => {
-    setupBacklog(tmp, [makeFeature("F-001")]);
+    setupBacklog(tmp, [makeFeature("feature-one")]);
     setupState(tmp);
 
     const result = await ship({
       root: tmp,
-      featureTarget: "F-999",
+      featureTarget: "feature-dep",
       dryRun: true,
       phaseRunner: successRunner,
     });
 
     expect(result.success).toBe(false);
-    expect(result.error).toContain("F-999");
-    expect(result.featureTitle).toBe("F-999");
+    expect(result.error).toContain("feature-dep");
+    expect(result.featureTitle).toBe("feature-dep");
     expect(result.failed).toBe(1);
     expect(result.finalStatus).toBe("failed");
   });
 
   it("returns success:false when featureTarget title substring not in backlog", async () => {
-    setupBacklog(tmp, [makeFeature("F-001")]);
+    setupBacklog(tmp, [makeFeature("feature-one")]);
     setupState(tmp);
 
     const result = await ship({
@@ -378,8 +378,8 @@ describe("ship loop – no_open_features (line 513-515)", () => {
 
   it("returns finalStatus=no_open_features when all features are done or blocked", async () => {
     setupBacklog(tmp, [
-      makeFeature("F-001", "done"),
-      makeFeature("F-002", "blocked"),
+      makeFeature("feature-one", "done"),
+      makeFeature("feature-two", "blocked"),
     ]);
     setupState(tmp);
 
@@ -431,8 +431,8 @@ describe("ship loop – blocked_by_dependencies (lines 518-530)", () => {
   it("returns finalStatus=blocked when feature is blocked by unmet dependency", async () => {
     // F-001 depends on F-002 which is not done
     setupBacklog(tmp, [
-      makeFeature("F-001", "open", ["F-002"]),
-      makeFeature("F-002", "open"),
+      makeFeature("feature-one", "open", ["feature-two"]),
+      makeFeature("feature-two", "open"),
     ]);
     setupState(tmp);
 
@@ -443,7 +443,7 @@ describe("ship loop – blocked_by_dependencies (lines 518-530)", () => {
 
     // Feature that depends on a non-existent feature
     setupBacklog(tmp, [
-      makeFeature("F-001", "open", ["F-999"]),
+      makeFeature("feature-one", "open", ["feature-dep"]),
     ]);
 
     const result = await ship({
@@ -469,8 +469,8 @@ describe("ship loop – maxFailures threshold blocks feature (lines 536-551)", (
 
   it("marks feature blocked after maxFailures consecutive failures and advances", async () => {
     setupBacklog(tmp, [
-      makeFeature("F-001"),
-      makeFeature("F-002"),
+      makeFeature("feature-one"),
+      makeFeature("feature-two"),
     ]);
     const store = setupState(tmp);
 
@@ -503,12 +503,12 @@ describe("ship – brownfield snapshot written when not dry-run (lines 226-230)"
     mkdirSync(join(tmp, "src"), { recursive: true });
     writeFileSync(join(tmp, "package.json"), JSON.stringify({ name: "app", dependencies: { express: "^4" } }), "utf8");
     writeFileSync(join(tmp, "src", "index.ts"), "export {};", "utf8");
-    setupBacklog(tmp, [makeFeature("F-001")]);
+    setupBacklog(tmp, [makeFeature("feature-one")]);
     setupState(tmp, "brownfield");
 
     const result = await ship({
       root: tmp,
-      featureTarget: "F-001",
+      featureTarget: "feature-one",
       dryRun: true,
       phaseRunner: successRunner,
     });
@@ -528,19 +528,19 @@ describe("ship – dryRun=true iteration log path (lines 345-350)", () => {
   afterEach(() => rmSync(tmp, { recursive: true, force: true }));
 
   it("writes DONE log entry without implementation report when dryRun=true", async () => {
-    setupBacklog(tmp, [makeFeature("F-001")]);
+    setupBacklog(tmp, [makeFeature("feature-one")]);
     setupState(tmp);
 
     const result = await ship({
       root: tmp,
-      featureTarget: "F-001",
+      featureTarget: "feature-one",
       dryRun: true,
       phaseRunner: successRunner,
     });
 
     expect(result.success).toBe(true);
     // Implementation report should NOT exist (dryRun skips it)
-    const reportPath = join(tmp, "docs", "specs", "f-001", "implementation-report.json");
+    const reportPath = join(tmp, "docs", "specs", "feature-one", "implementation-report.json");
     expect(existsSync(reportPath)).toBe(false);
 
     // But iteration log should exist
@@ -548,6 +548,6 @@ describe("ship – dryRun=true iteration log path (lines 345-350)", () => {
     expect(existsSync(logPath)).toBe(true);
     const logContent = readFileSync(logPath, "utf8");
     expect(logContent).toContain("DONE");
-    expect(logContent).toContain("F-001");
+    expect(logContent).toContain("feature-one");
   });
 });

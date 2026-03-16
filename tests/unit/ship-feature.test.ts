@@ -56,13 +56,13 @@ describe("shipFeature — backlog required", () => {
 
   it("returns success:false with clear error when backlog is missing", async () => {
     // No docs/ or backlog at all
-    const result = await shipFeature({ root: tmp, featureTarget: "F-001", dryRun: true, phaseRunner: noopRunner });
+    const result = await shipFeature({ root: tmp, featureTarget: "feature-one", dryRun: true, phaseRunner: noopRunner });
     expect(result.success).toBe(false);
     expect(result.error).toBeDefined();
   });
 
   it("error message mentions generate + bootstrap commands", async () => {
-    const result = await shipFeature({ root: tmp, featureTarget: "F-001", dryRun: true, phaseRunner: noopRunner });
+    const result = await shipFeature({ root: tmp, featureTarget: "feature-one", dryRun: true, phaseRunner: noopRunner });
     expect(result.error).toContain("generate");
     expect(result.error).toContain("bootstrap");
   });
@@ -81,23 +81,23 @@ describe("shipFeature — transparent brownfield handling", () => {
     mkdirSync(join(tmp, "src"), { recursive: true });
     writeFileSync(join(tmp, "package.json"), JSON.stringify({ name: "app", dependencies: { express: "^4" } }), "utf8");
     writeFileSync(join(tmp, "src", "index.ts"), "export {};", "utf8");
-    setupBacklog(tmp, [makeFeature("F-001")]);
+    setupBacklog(tmp, [makeFeature("feature-one")]);
 
-    const result = await shipFeature({ root: tmp, featureTarget: "F-001", dryRun: true, phaseRunner: noopRunner });
+    const result = await shipFeature({ root: tmp, featureTarget: "feature-one", dryRun: true, phaseRunner: noopRunner });
     expect(result.brownfieldSnapshotWritten).toBe(false); // dryRun=true skips writes
   });
 
   it("proceeds normally when backlog + feature present in greenfield", async () => {
-    setupBacklog(tmp, [makeFeature("F-001")]);
-    const result = await shipFeature({ root: tmp, featureTarget: "F-001", dryRun: true, phaseRunner: noopRunner });
-    expect(result.featureId).toBe("F-001");
+    setupBacklog(tmp, [makeFeature("feature-one")]);
+    const result = await shipFeature({ root: tmp, featureTarget: "feature-one", dryRun: true, phaseRunner: noopRunner });
+    expect(result.featureId).toBe("feature-one");
   });
 
   it("returns feature not found error when feature missing in backlog", async () => {
-    setupBacklog(tmp, [makeFeature("F-001")]);
-    const result = await shipFeature({ root: tmp, featureTarget: "F-999", dryRun: true, phaseRunner: noopRunner });
+    setupBacklog(tmp, [makeFeature("feature-one")]);
+    const result = await shipFeature({ root: tmp, featureTarget: "feature-dep", dryRun: true, phaseRunner: noopRunner });
     expect(result.success).toBe(false);
-    expect(result.error).toContain("F-999");
+    expect(result.error).toContain("feature-dep");
   });
 });
 
@@ -107,25 +107,25 @@ describe("shipFeature — transparent brownfield handling", () => {
 
 describe("resolveTargetFeature", () => {
   const features: Feature[] = [
-    makeFeature("F-001"),
-    { ...makeFeature("F-002"), status: "done" },
-    { ...makeFeature("F-003"), title: "Payment Gateway" },
+    makeFeature("feature-one"),
+    { ...makeFeature("feature-two"), status: "done" },
+    { ...makeFeature("feature-three"), title: "Payment Gateway" },
   ];
   const backlog: Backlog = { ...makeEmptyBacklog(), features };
 
   it("returns first open feature when target is undefined", () => {
     const f = resolveTargetFeature(backlog, undefined);
-    expect(f?.id).toBe("F-001");
+    expect(f?.id).toBe("feature-one");
   });
 
   it("resolves by ID (F-003)", () => {
-    const f = resolveTargetFeature(backlog, "F-003");
-    expect(f?.id).toBe("F-003");
+    const f = resolveTargetFeature(backlog, "feature-three");
+    expect(f?.id).toBe("feature-three");
   });
 
   it("resolves by title substring (case-insensitive partial match)", () => {
     const f = resolveTargetFeature(backlog, "payment");
-    expect(f?.id).toBe("F-003");
+    expect(f?.id).toBe("feature-three");
   });
 
   it("returns undefined when no feature matches", () => {

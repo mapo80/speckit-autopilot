@@ -69,7 +69,7 @@ describe("resumeLoop – completed product", () => {
     const store = new StateStore(tmp);
     store.createInitial();
     store.update({ status: "completed" });
-    writeBacklog(tmp, [makeFeature("F-001", "done")]);
+    writeBacklog(tmp, [makeFeature("feature-one", "done")]);
 
     const result = await resumeLoop({ root: tmp, continueAutomatically: false });
     expect(result.resumed).toBe(false);
@@ -88,8 +88,8 @@ describe("resumeLoop – active feature", () => {
   it("returns correct resolved phase from state", async () => {
     const store = new StateStore(tmp);
     store.createInitial();
-    store.update({ activeFeature: "F-001", currentPhase: "implement", status: "running" });
-    writeBacklog(tmp, [makeFeature("F-001", "in_progress")]);
+    store.update({ activeFeature: "feature-one", currentPhase: "implement", status: "running" });
+    writeBacklog(tmp, [makeFeature("feature-one", "in_progress")]);
 
     const result = await resumeLoop({ root: tmp, continueAutomatically: false });
     expect(result.resumed).toBe(true);
@@ -99,11 +99,11 @@ describe("resumeLoop – active feature", () => {
   it("includes banner with feature info", async () => {
     const store = new StateStore(tmp);
     store.createInitial();
-    store.update({ activeFeature: "F-002", currentPhase: "plan", status: "running" });
-    writeBacklog(tmp, [makeFeature("F-002", "in_progress")]);
+    store.update({ activeFeature: "feature-two", currentPhase: "plan", status: "running" });
+    writeBacklog(tmp, [makeFeature("feature-two", "in_progress")]);
 
     const result = await resumeLoop({ root: tmp, continueAutomatically: false });
-    expect(result.banner).toContain("F-002");
+    expect(result.banner).toContain("feature-two");
   });
 });
 
@@ -120,7 +120,7 @@ describe("resumeLoop – continueAutomatically", () => {
     const store = new StateStore(tmp);
     store.createInitial();
     store.update({ status: "running" });
-    writeBacklog(tmp, [makeFeature("F-001", "open")]);
+    writeBacklog(tmp, [makeFeature("feature-one", "open")]);
 
     const result = await resumeLoop({
       root: tmp,
@@ -147,8 +147,8 @@ describe("resumeLoop – bootstrapped with activeFeature", () => {
     const store = new StateStore(tmp);
     store.createInitial();
     // Force status=bootstrapped but also set activeFeature (covers the && !state.activeFeature false branch)
-    store.update({ status: "bootstrapped", activeFeature: "F-001", currentPhase: "spec" });
-    writeBacklog(tmp, [makeFeature("F-001", "in_progress")]);
+    store.update({ status: "bootstrapped", activeFeature: "feature-one", currentPhase: "spec" });
+    writeBacklog(tmp, [makeFeature("feature-one", "in_progress")]);
 
     const result = await resumeLoop({ root: tmp, continueAutomatically: false });
     expect(result.resumed).toBe(true);
@@ -159,7 +159,7 @@ describe("resumeLoop – bootstrapped with activeFeature", () => {
     const store = new StateStore(tmp);
     store.createInitial();
     store.update({ status: "running" });
-    writeBacklog(tmp, [makeFeature("F-001", "done")]);
+    writeBacklog(tmp, [makeFeature("feature-one", "done")]);
 
     // Don't pass continueAutomatically — uses default true
     const result = await resumeLoop({
@@ -186,17 +186,17 @@ describe("resumeLoop – compaction reinjection", () => {
     const store = new StateStore(tmp);
     store.createInitial();
     store.update({
-      activeFeature: "F-001",
+      activeFeature: "feature-one",
       currentPhase: "clarify",
       status: "running",
       compactCount: 1,
       lastCompactAt: new Date().toISOString(),
     });
-    writeBacklog(tmp, [makeFeature("F-001", "in_progress")]);
+    writeBacklog(tmp, [makeFeature("feature-one", "in_progress")]);
 
     const result = await resumeLoop({ root: tmp, continueAutomatically: false });
     expect(result.resumed).toBe(true);
     expect(result.resolvedPhase).toBe("clarify");
-    expect(result.banner).toContain("F-001");
+    expect(result.banner).toContain("feature-one");
   });
 });

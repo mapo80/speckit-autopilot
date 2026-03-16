@@ -58,7 +58,7 @@ describe("ship – QA gate failure resets currentPhase to spec (BUG#7)", () => {
   afterEach(() => rmSync(tmp, { recursive: true, force: true }));
 
   it("sets currentPhase to 'spec' after QA gate test failure", async () => {
-    setupProject(tmp, [makeFeature("F-001")]);
+    setupProject(tmp, [makeFeature("feature-one")]);
 
     // Enable gating with a test script that always fails
     const store = new StateStore(tmp);
@@ -85,7 +85,7 @@ describe("ship – QA gate failure resets currentPhase to spec (BUG#7)", () => {
 
     const result = await ship({
       root: tmp,
-      featureTarget: "F-001",
+      featureTarget: "feature-one",
       dryRun: false,
       phaseRunner: successRunner,
     });
@@ -99,7 +99,7 @@ describe("ship – QA gate failure resets currentPhase to spec (BUG#7)", () => {
   });
 
   it("increments consecutiveFailures on QA gate failure", async () => {
-    setupProject(tmp, [makeFeature("F-001")]);
+    setupProject(tmp, [makeFeature("feature-one")]);
 
     const store = new StateStore(tmp);
     store.update({
@@ -121,7 +121,7 @@ describe("ship – QA gate failure resets currentPhase to spec (BUG#7)", () => {
 
     await ship({
       root: tmp,
-      featureTarget: "F-001",
+      featureTarget: "feature-one",
       dryRun: false,
       phaseRunner: successRunner,
     });
@@ -131,7 +131,7 @@ describe("ship – QA gate failure resets currentPhase to spec (BUG#7)", () => {
   });
 
   it("marks feature back to 'open' in backlog after QA gate failure", async () => {
-    setupProject(tmp, [makeFeature("F-001")]);
+    setupProject(tmp, [makeFeature("feature-one")]);
 
     const store = new StateStore(tmp);
     store.update({
@@ -153,7 +153,7 @@ describe("ship – QA gate failure resets currentPhase to spec (BUG#7)", () => {
 
     await ship({
       root: tmp,
-      featureTarget: "F-001",
+      featureTarget: "feature-one",
       dryRun: false,
       phaseRunner: successRunner,
     });
@@ -164,7 +164,7 @@ describe("ship – QA gate failure resets currentPhase to spec (BUG#7)", () => {
   });
 
   it("skips QA gate in dryRun mode (gate always passes)", async () => {
-    setupProject(tmp, [makeFeature("F-001")]);
+    setupProject(tmp, [makeFeature("feature-one")]);
 
     const store = new StateStore(tmp);
     store.update({
@@ -187,7 +187,7 @@ describe("ship – QA gate failure resets currentPhase to spec (BUG#7)", () => {
 
     const result = await ship({
       root: tmp,
-      featureTarget: "F-001",
+      featureTarget: "feature-one",
       dryRun: true,
       phaseRunner: successRunner,
     });
