@@ -67,7 +67,9 @@ export function callClaudeForReview(prompt: string): Promise<string> {
 
 export function callClaudeForText(prompt: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    const proc = spawn("claude", ["--print", "--dangerously-skip-permissions", "--allowedTools", ""], {
+    // No --dangerously-skip-permissions: tool writes are blocked so Claude is
+    // forced to output text directly to stdout.
+    const proc = spawn("claude", ["--print"], {
       shell: false,
       env: { ...process.env },
     });

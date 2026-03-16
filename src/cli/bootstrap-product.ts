@@ -272,7 +272,9 @@ export function buildBacklogFromProduct(parsed: ParsedProduct): Backlog {
 
 export function buildProjectStructurePrompt(productContent: string, techStackContent: string): string {
   const productSummary = productContent.split("\n").slice(0, 50).join("\n");
-  return `You are generating docs/project-structure.md for a new software project.
+  return `You are generating the content of docs/project-structure.md for a new software project.
+
+IMPORTANT: Do NOT write any files. Do NOT use any tools. Just print the markdown content to stdout.
 
 Given the tech stack and product summary below, define the EXACT canonical folder structure.
 
@@ -284,7 +286,7 @@ REQUIREMENTS:
 - Be specific about naming conventions (PascalCase controllers, kebab-case components, etc.)
 - Paths must be relative from project root
 
-Output ONLY the markdown for docs/project-structure.md — no preamble, no closing remarks.
+Print ONLY the markdown content — start immediately with "# " heading, no preamble, no closing remarks.
 
 TECH STACK:
 ${techStackContent}
