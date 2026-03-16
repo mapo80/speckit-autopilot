@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from "fs";
 import { join } from "path";
-import { callClaudeForText } from "./audit.js";
+import { callClaudeForReview } from "./audit.js";
 import type { BrownfieldSnapshot } from "../core/brownfield-snapshot.js";
 
 // ---------------------------------------------------------------------------
@@ -16,29 +16,46 @@ export interface GenerateTechStackResult {
 }
 
 // ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Extract the ## Tech Stack section from product.md content.
+ * Returns a well-formed markdown string starting with "# Tech Stack", or null
+ * if the section is absent.
+ */
+export function extractTechStackSection(productMdContent: string): string | null {
+  // Find "## Tech Stack" section (case-insensitive), stop at next ## heading
+  const match = productMdContent.match(/^##\s+Tech Stack\s*\n([\s\S]*?)(?=^##\s|\Z)/im);
+  if (!match) return null;
+  const body = match[1].trim();
+  if (!body) return null;
+  // Normalize sub-heading levels: ### → ## so the output is consistent
+  // (product.md uses ### under ## Tech Stack, output uses ## under # Tech Stack)
+  const normalized = body.replace(/^###\s/gm, "## ").replace(/^####\s/gm, "### ");
+  return `# Tech Stack\n\n${normalized}\n`;
+}
+
+// ---------------------------------------------------------------------------
 // Prompt
 // ---------------------------------------------------------------------------
 
 function buildTechStackPrompt(productMdContent: string): string {
-  return `You are converting a product specification into docs/tech-stack.md.
+  return `Extract the technology stack from the product specification below and output it as markdown.
 
-The product.md below already contains a ## Tech Stack section with technology choices.
-Extract EVERY technology detail and expand it into the structured format below.
-
-Output ONLY a valid docs/tech-stack.md — no preamble, no closing remarks:
+Format:
 
 # Tech Stack
 
 ## Backend
-- Language / Runtime: <exact version if specified, e.g. "Node.js 20 (LTS)" — or "Not specified">
-- Framework: <framework + version if mentioned — or "Not specified">
-- Architecture: <architecture pattern — or "Not specified">
-- Test framework: <e.g. Jest, xUnit, pytest — if mentioned>
+- Language / Runtime: <exact version if specified>
+- Framework: <framework + version if mentioned>
+- Architecture: <architecture pattern if mentioned>
 
 ## Frontend (omit section if not applicable)
 - Framework: <framework + version>
 - UI library: <library if specified>
-- Build tool: <e.g. Vite, Webpack — if mentioned>
+- Build tool: <e.g. Vite, Webpack>
 - Source extension: <e.g. .tsx, .vue>
 
 ## Mobile (omit section if not applicable)
@@ -47,22 +64,18 @@ Output ONLY a valid docs/tech-stack.md — no preamble, no closing remarks:
 
 ## Database (omit section if not applicable)
 - Primary: <database + version if specified>
-- ORM / ODM: <e.g. Prisma, SQLAlchemy, EF Core — if mentioned>
-- Cache: <e.g. Redis — if mentioned>
-- Message queue: <e.g. RabbitMQ, Kafka — if mentioned>
+- ORM / ODM: <e.g. Prisma, EF Core>
+- Message queue: <e.g. RabbitMQ, Hangfire>
 
 ## Infrastructure (omit section if not applicable)
 - Cloud: <provider + services if mentioned>
-- Containers: <Docker / Kubernetes if mentioned>
-- CI/CD: <if mentioned>
 
 RULES:
-- Copy technology choices exactly as stated in product.md — do not invent or substitute
-- If a technology is mentioned but version is unspecified, omit the version
-- Omit entire sections (e.g. ## Mobile) when clearly not applicable
-- Output ONLY the markdown
+- Copy technology choices exactly as stated — do not invent or substitute
+- Omit entire sections when clearly not applicable
+- Output ONLY the markdown content, starting with "# Tech Stack"
 
-PRODUCT SPECIFICATION (product.md):
+PRODUCT SPECIFICATION:
 ${productMdContent}`;
 }
 
@@ -135,7 +148,7 @@ RULES:
  */
 export async function generateTechStack(
   root: string,
-  callClaude: (prompt: string) => Promise<string> = callClaudeForText,
+  callClaude: (prompt: string) => Promise<string> = callClaudeForReview,
   options: { overwrite: boolean } = { overwrite: false }
 ): Promise<GenerateTechStackResult> {
   const docsDir = join(root, "docs");
@@ -164,10 +177,20 @@ export async function generateTechStack(
   }
 
   const productMdContent = readFileSync(productMdPath, "utf8");
-  const prompt = buildTechStackPrompt(productMdContent);
-  const output = await callClaude(prompt);
 
   mkdirSync(docsDir, { recursive: true });
+
+  // Fast path: extract the ## Tech Stack section directly from product.md.
+  // product.md already contains the tech stack; no Claude call needed.
+  const extracted = extractTechStackSection(productMdContent);
+  if (extracted) {
+    writeFileSync(techStackPath, extracted, "utf8");
+    return { techStackPath, created: true, backupPath };
+  }
+
+  // Fallback: call Claude when product.md has no ## Tech Stack section.
+  const prompt = buildTechStackPrompt(productMdContent);
+  const output = await callClaude(prompt);
 
   // Claude may have written the file via tools during the call.
   // Keep it if it's valid markdown; if corrupt, delete it then try stdout.

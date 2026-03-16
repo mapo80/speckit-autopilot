@@ -92,10 +92,22 @@ describe("generateTechStack", () => {
     ).rejects.toThrow("docs/product.md not found");
   });
 
-  it("includes product.md content in the Claude prompt", async () => {
+  it("uses fast-path extraction when product.md has a Tech Stack section (Claude not called)", async () => {
     const root = makeTmp(); dirs.push(root);
     mkdirSync(join(root, "docs"), { recursive: true });
     writeFileSync(join(root, "docs", "product.md"), PRODUCT_MD, "utf8");
+
+    let claudeCalled = false;
+    const result = await generateTechStack(root, async () => { claudeCalled = true; return TECH_STACK_RESPONSE; });
+    expect(claudeCalled).toBe(false);
+    expect(result.created).toBe(true);
+  });
+
+  it("calls Claude with product.md content when no Tech Stack section present", async () => {
+    const root = makeTmp(); dirs.push(root);
+    mkdirSync(join(root, "docs"), { recursive: true });
+    const noStackMd = "# My Product\n\n## Vision\nA product without tech stack section.\n";
+    writeFileSync(join(root, "docs", "product.md"), noStackMd, "utf8");
 
     let capturedPrompt = "";
     await generateTechStack(root, async (prompt) => { capturedPrompt = prompt; return TECH_STACK_RESPONSE; });
