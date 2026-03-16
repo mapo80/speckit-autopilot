@@ -312,8 +312,30 @@ export async function generateProjectStructure(
   const prompt = buildProjectStructurePrompt(productContent, techStackContent);
   const output = await callClaude(prompt);
 
-  writeFileSync(projectStructurePath, output, "utf8");
-  return { created: true };
+  // Claude may have written the file via its tools during the call.
+  // If the file now exists with valid markdown content, keep it — don't overwrite
+  // with the text summary Claude prints to stdout.
+  // Claude may have written the file via its tools during the call.
+  // If the file now exists with valid markdown content, keep it — don't overwrite
+  // with the text summary Claude prints to stdout.
+  const writtenByTool = existsSync(projectStructurePath);
+  if (writtenByTool) {
+    const existing = readFileSync(projectStructurePath, "utf8").trim();
+    const looksLikeMarkdown = existing.startsWith("#") && existing.length > 50;
+    if (looksLikeMarkdown) return { created: true };
+    // File exists but looks corrupt — fall through and overwrite with output
+  }
+
+  // Validate output before writing: must start with # and be substantial markdown
+  const trimmedOutput = output.trim();
+  if (trimmedOutput.startsWith("#") && trimmedOutput.length > 50) {
+    writeFileSync(projectStructurePath, trimmedOutput, "utf8");
+    return { created: true };
+  }
+
+  // Output looks like a Claude commentary rather than markdown — skip writing
+  // The caller will need to handle the missing file (e.g., bootstrap continues without it)
+  return { created: false };
 }
 
 // ---------------------------------------------------------------------------

@@ -108,13 +108,14 @@ describe("generateProjectStructure", () => {
     expect(result.created).toBe(false);
   });
 
-  it("writes the Claude response verbatim to project-structure.md", async () => {
+  it("skips writing when Claude returns commentary (not markdown starting with #)", async () => {
     writeDocs(tmp, MOCK_PRODUCT, MOCK_TECH_STACK);
-    const mockClaude = async () => "GENERATED STRUCTURE CONTENT";
+    // Simulate Claude responding with a tool-use summary instead of markdown
+    const mockClaude = async () => "The file already exists and is well-structured — no changes needed.";
 
-    await generateProjectStructure(tmp, mockClaude);
+    const result = await generateProjectStructure(tmp, mockClaude);
 
-    const content = readFileSync(join(tmp, "docs", "project-structure.md"), "utf8");
-    expect(content).toBe("GENERATED STRUCTURE CONTENT");
+    expect(result.created).toBe(false);
+    expect(existsSync(join(tmp, "docs", "project-structure.md"))).toBe(false);
   });
 });
