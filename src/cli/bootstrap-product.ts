@@ -6,7 +6,7 @@ import { makeEmptyBacklog, Backlog, Feature, featureSlug } from "../core/backlog
 import { StateStore } from "../core/state-store.js";
 import { generateRoadmap, renderRoadmapMarkdown } from "../core/roadmap-generator.js";
 import { spawnSync } from "child_process";
-import { auditBootstrap, callClaudeForReview, callClaudeForText } from "./audit.js";
+import { auditBootstrap, callClaudeForText } from "./audit.js";
 import { generateTechStack, generateTechStackFromSnapshot } from "./generate-techstack.js";
 import { isBrownfieldRepo, buildBrownfieldSnapshot, writeBrownfieldSnapshot } from "../core/brownfield-snapshot.js";
 
@@ -331,7 +331,7 @@ export async function generateProjectStructure(
   // Validate output before writing: must start with # and be substantial markdown
   const trimmedOutput = output.trim();
   if (trimmedOutput.startsWith("#") && trimmedOutput.length > 50) {
-    writeFileSync(projectStructurePath, trimmedOutput, "utf8");
+    writeFileSync(projectStructurePath, output, "utf8");  // write original (preserve trailing newline)
     return { created: true };
   }
 
@@ -358,7 +358,7 @@ export interface BootstrapResult {
 
 export async function bootstrapProduct(
   root: string,
-  callClaude: (prompt: string) => Promise<string> = callClaudeForReview
+  callClaude: (prompt: string) => Promise<string> = callClaudeForText
 ): Promise<BootstrapResult> {
   const productMdPath = join(root, "docs", "product.md");
 
@@ -402,8 +402,11 @@ export async function bootstrapProduct(
       await generateTechStackFromSnapshot(root, callClaude, snapshot);
     }
   } else {
-    // Greenfield or snapshot already present: generate from product.md if absent
+    // Greenfield or snapshot already present: generate from product.md if absent.
     await generateTechStack(root, callClaude, { overwrite: false });
+    // Note: callClaude is the injected test mock (valid for testing).
+    // In production bootstrapProduct defaults to callClaudeForReview, but
+    // generateTechStack's own validation rejects non-markdown output.
   }
 
   // Generate canonical project structure

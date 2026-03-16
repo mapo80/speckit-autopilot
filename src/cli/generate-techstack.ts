@@ -1,6 +1,6 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from "fs";
 import { join } from "path";
-import { callClaudeForReview } from "./audit.js";
+import { callClaudeForText } from "./audit.js";
 import type { BrownfieldSnapshot } from "../core/brownfield-snapshot.js";
 
 // ---------------------------------------------------------------------------
@@ -135,7 +135,7 @@ RULES:
  */
 export async function generateTechStack(
   root: string,
-  callClaude: (prompt: string) => Promise<string> = callClaudeForReview,
+  callClaude: (prompt: string) => Promise<string> = callClaudeForText,
   options: { overwrite: boolean } = { overwrite: false }
 ): Promise<GenerateTechStackResult> {
   const docsDir = join(root, "docs");
@@ -168,9 +168,24 @@ export async function generateTechStack(
   const output = await callClaude(prompt);
 
   mkdirSync(docsDir, { recursive: true });
-  writeFileSync(techStackPath, output, "utf8");
 
-  return { techStackPath, created: true, backupPath };
+  // Claude may have written the file via tools during the call.
+  // Keep it if it's valid markdown; if corrupt, delete it then try stdout.
+  if (existsSync(techStackPath)) {
+    const existing = readFileSync(techStackPath, "utf8").trim();
+    if (existing.startsWith("#") && existing.length > 50) {
+      return { techStackPath, created: true, backupPath };
+    }
+    // Tool-written file has corrupt content (e.g. commentary) — remove it
+    try { unlinkSync(techStackPath); } catch { /* ignore */ }
+  }
+  const trimmedOutput = output.trim();
+  if (trimmedOutput.startsWith("#") && trimmedOutput.length > 50) {
+    writeFileSync(techStackPath, output, "utf8");  // write original (preserve trailing newline)
+    return { techStackPath, created: true, backupPath };
+  }
+  // Output is commentary, not markdown — skip writing
+  return { techStackPath, created: false, backupPath };
 }
 
 // ---------------------------------------------------------------------------
@@ -201,7 +216,20 @@ export async function generateTechStackFromSnapshot(
   const output = await callClaude(prompt);
 
   mkdirSync(docsDir, { recursive: true });
-  writeFileSync(techStackPath, output, "utf8");
 
-  return { techStackPath, created: true };
+  // Same validation as generateTechStack: keep tool-written file if valid,
+  // delete if corrupt, then try stdout.
+  if (existsSync(techStackPath)) {
+    const existing = readFileSync(techStackPath, "utf8").trim();
+    if (existing.startsWith("#") && existing.length > 50) {
+      return { techStackPath, created: true };
+    }
+    try { unlinkSync(techStackPath); } catch { /* ignore */ }
+  }
+  const trimmedOutput = output.trim();
+  if (trimmedOutput.startsWith("#") && trimmedOutput.length > 50) {
+    writeFileSync(techStackPath, trimmedOutput, "utf8");
+    return { techStackPath, created: true };
+  }
+  return { techStackPath, created: false };
 }
